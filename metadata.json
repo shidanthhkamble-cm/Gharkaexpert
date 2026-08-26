@@ -1,0 +1,6 @@
+{
+  "name": "GharKaExpert",
+  "description": "100% Free / Zero Commission Local Services & Mechanic Booking App connecting customers with verified Experts, Mechanics, and Masons.",
+  "requestFramePermissions": ["camera"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
