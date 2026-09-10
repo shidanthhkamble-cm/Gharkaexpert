@@ -115,7 +115,7 @@ export const DirectBookingModal: React.FC<DirectBookingModalProps> = ({
               Booking Confirmed! ✅
             </h3>
             <p className="text-xs text-slate-600 max-w-xs mx-auto">
-              We have sent a SMS alert to {worker.name} (+91 {worker.phone}). You will receive a direct confirmation call shortly.
+              We have dispatched a secure in-app booking alert to {worker.name} (Ext #{worker.id.replace('worker-', '')}). All communications, OTP confirmation, and warranty protection remain strictly inside GharKaExpert.
             </p>
           </div>
         ) : (

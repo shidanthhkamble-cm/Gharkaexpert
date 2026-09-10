@@ -1,6 +1,19 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { X, ExternalLink, Sparkles, AlertCircle, ShieldAlert, Info, ChevronRight } from 'lucide-react';
+import { 
+  X, 
+  ExternalLink, 
+  Sparkles, 
+  AlertCircle, 
+  ShieldAlert, 
+  Info, 
+  ChevronRight,
+  Phone,
+  Zap,
+  Play,
+  CheckCircle2,
+  ShieldCheck
+} from 'lucide-react';
 import { ADMOB_CONFIG } from '../services/admobService';
 
 interface BannerAdProps {
@@ -164,29 +177,42 @@ interface InterstitialAdModalProps {
   subtitle?: string;
   adUnitId?: string;
   onProceedAction?: () => void;
+  actionType?: 'call' | 'instant_dispatch' | 'whatsapp' | 'booking';
+  targetWorkerName?: string;
 }
 
 const INTERSTITIAL_CREATIVES = [
   {
     title: 'Tata Tiscon 550D Steel & UltraTech Cement',
-    description: 'Direct wholesale rates on primary construction steel and Portland Pozzolana Cement. Delivery within 24 hours guaranteed.',
+    description: 'Direct wholesale rates on primary construction steel & Portland Pozzolana Cement. Delivery within 24 hours guaranteed.',
     coupon: 'EXPERT100',
     couponDiscount: 'Save ₹100 on raw hardware materials',
-    emoji: '🏗️'
+    emoji: '🏗️',
+    sponsor: 'Tata Steel & UltraTech Partner'
   },
   {
     title: 'Bosch & Stanley Heavy Duty Drills',
     description: 'Equip your site with brushless cordless rotary hammers and angle grinders with 1-year on-site replacement warranty.',
     coupon: 'TOOLSPRO20',
     couponDiscount: 'Flat 20% discount at verified tool partners',
-    emoji: '⚡'
+    emoji: '⚡',
+    sponsor: 'Bosch Professional Tools'
   },
   {
     title: 'Havells Smart Home Electrical Supplies',
     description: 'Upgrade wiring, MCB distribution boards, and modular switches with flame-retardant industrial standard materials.',
     coupon: 'POWER150',
     couponDiscount: 'Save ₹150 on electrical switches bundle',
-    emoji: '🔌'
+    emoji: '🔌',
+    sponsor: 'Havells India Certified'
+  },
+  {
+    title: 'Asian Paints Royale & Dr. Fixit Waterproofing',
+    description: 'Waterproofing chemicals, silicone sealants, and Royale luxury emulsions with doorstep shade consultations.',
+    coupon: 'PAINT75',
+    couponDiscount: 'Get free primer on orders above ₹2,000',
+    emoji: '🎨',
+    sponsor: 'Asian Paints & Pidilite'
   }
 ];
 
@@ -196,44 +222,75 @@ export const InterstitialAdModal: React.FC<InterstitialAdModalProps> = ({
   subtitle,
   adUnitId = ADMOB_CONFIG.interstitialAdUnitId,
   onProceedAction,
+  actionType = 'call',
+  targetWorkerName,
 }) => {
-  const [countdown, setCountdown] = useState(3);
+  const TOTAL_DURATION = 3;
+  const [countdown, setCountdown] = useState(TOTAL_DURATION);
   const [canSkip, setCanSkip] = useState(false);
+  const [isFinishing, setIsFinishing] = useState(false);
+  const hasFinishedRef = useRef(false);
+
   const [creative] = useState(() => 
     INTERSTITIAL_CREATIVES[Math.floor(Math.random() * INTERSTITIAL_CREATIVES.length)]
   );
 
+  const handleFinish = useCallback(() => {
+    if (hasFinishedRef.current) return;
+    hasFinishedRef.current = true;
+    setIsFinishing(true);
+
+    // Proceed with connection immediately after ad finishes
+    setTimeout(() => {
+      if (onProceedAction) {
+        onProceedAction();
+      }
+      onClose();
+    }, 200);
+  }, [onProceedAction, onClose]);
+
   useEffect(() => {
     if (countdown > 0) {
       const timer = setInterval(() => {
-        setCountdown((prev) => prev - 1);
+        setCountdown((prev) => {
+          if (prev <= 1) {
+            setCanSkip(true);
+          }
+          return prev - 1;
+        });
       }, 1000);
       return () => clearInterval(timer);
     } else {
-      setCanSkip(true);
+      // Ad playback completed! Automatically & immediately proceed with connection
+      handleFinish();
     }
-  }, [countdown]);
+  }, [countdown, handleFinish]);
 
-  const handleFinish = () => {
-    if (onProceedAction) {
-      onProceedAction();
-    }
-    onClose();
-  };
+  const progressPercent = Math.min(100, Math.round(((TOTAL_DURATION - countdown) / TOTAL_DURATION) * 100));
 
   return (
-    <div className="fixed inset-0 z-50 bg-slate-950/92 backdrop-blur-md flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-50 bg-slate-950/95 backdrop-blur-md flex items-center justify-center p-4">
       <motion.div
         initial={{ scale: 0.92, opacity: 0 }}
         animate={{ scale: 1, opacity: 1 }}
         exit={{ scale: 0.9, opacity: 0 }}
-        className="w-full max-w-sm bg-slate-900 border border-amber-500/50 rounded-3xl p-5 text-white shadow-2xl relative overflow-hidden flex flex-col items-center text-center space-y-4"
+        className="w-full max-w-sm bg-slate-900 border-2 border-amber-500/60 rounded-3xl p-5 text-white shadow-2xl relative overflow-hidden flex flex-col items-center text-center space-y-3.5"
       >
-        {/* AdMob Header Bar */}
-        <div className="w-full flex items-center justify-between text-xs text-slate-400 border-b border-slate-800 pb-2.5">
+        {/* Animated Playback Progress Bar */}
+        <div className="absolute top-0 left-0 right-0 h-1.5 bg-slate-800 overflow-hidden">
+          <motion.div
+            className="h-full bg-gradient-to-r from-amber-500 via-amber-400 to-yellow-300"
+            initial={{ width: '0%' }}
+            animate={{ width: `${progressPercent}%` }}
+            transition={{ duration: 0.4, ease: 'linear' }}
+          />
+        </div>
+
+        {/* AdMob Official Header Bar */}
+        <div className="w-full flex items-center justify-between text-xs text-slate-400 border-b border-slate-800/90 pb-2.5 pt-1">
           <div className="flex items-center gap-1.5">
-            <span className="bg-amber-400 text-slate-950 font-black text-[9px] px-2 py-0.5 rounded tracking-wider uppercase">
-              AdMob Interstitial
+            <span className="bg-amber-400 text-slate-950 font-black text-[9px] px-2 py-0.5 rounded tracking-wider uppercase shadow-2xs">
+              Google AdMob Interstitial
             </span>
             <span className="text-[9px] text-slate-400 font-mono hidden xs:inline">
               Unit: {adUnitId.slice(-10)}
@@ -242,35 +299,45 @@ export const InterstitialAdModal: React.FC<InterstitialAdModalProps> = ({
 
           <button
             onClick={handleFinish}
-            disabled={!canSkip}
-            className={`px-3 py-1 rounded-full text-xs font-bold transition-all flex items-center gap-1 ${
-              canSkip
-                ? 'bg-amber-500 text-slate-950 hover:bg-amber-400 cursor-pointer shadow-md'
-                : 'bg-slate-800 text-slate-500 cursor-not-allowed'
-            }`}
+            className="px-3 py-1 rounded-full text-xs font-bold transition-all flex items-center gap-1 cursor-pointer bg-amber-500 text-slate-950 hover:bg-amber-400 shadow-md active:scale-95"
+            title="Skip sponsor ad and proceed immediately"
           >
-            {canSkip ? (
-              <>
-                <span>Skip Ad</span>
-                <X className="w-3.5 h-3.5" />
-              </>
-            ) : (
-              <span>Skip in {countdown}s</span>
-            )}
+            <span className="text-[11px] font-extrabold">
+              {actionType === 'instant_dispatch' ? 'Skip & Auto-Match ⚡' : 'Skip & Connect ⚡'}
+            </span>
+            <ChevronRight className="w-3.5 h-3.5" />
           </button>
         </div>
 
+        {/* Target Action Banner (Why the ad is playing) */}
+        <div className="w-full py-1.5 px-3 bg-emerald-500/15 border border-emerald-400/30 rounded-xl flex items-center justify-center gap-1.5 text-xs text-emerald-300 font-bold">
+          {actionType === 'instant_dispatch' ? (
+            <>
+              <Zap className="w-3.5 h-3.5 text-emerald-400 animate-pulse" />
+              <span>Instant Dispatch: Auto-Matching via Fair Rotation...</span>
+            </>
+          ) : (
+            <>
+              <Phone className="w-3.5 h-3.5 text-emerald-400 animate-pulse" />
+              <span>Connecting Direct Call {targetWorkerName ? `to ${targetWorkerName}` : ''}...</span>
+            </>
+          )}
+        </div>
+
         {/* Ad Visual */}
-        <div className="w-20 h-20 bg-gradient-to-tr from-amber-500 via-amber-400 to-yellow-300 rounded-3xl flex items-center justify-center text-4xl shadow-xl my-1 relative">
+        <div className="w-20 h-20 bg-gradient-to-tr from-amber-500 via-amber-400 to-yellow-300 rounded-3xl flex items-center justify-center text-4xl shadow-xl relative my-0.5">
           <span className="animate-bounce">{creative.emoji}</span>
-          <div className="absolute -bottom-1.5 -right-1.5 w-6 h-6 bg-slate-900 border border-amber-400 rounded-full flex items-center justify-center text-[10px] font-bold text-amber-300">
+          <div className="absolute -bottom-1.5 -right-1.5 w-6 h-6 bg-slate-900 border border-amber-400 rounded-full flex items-center justify-center text-[9px] font-black text-amber-300 shadow-sm">
             Ad
           </div>
         </div>
 
         {/* Ad Copy */}
-        <div className="space-y-1.5">
-          <h3 className="text-base sm:text-lg font-black text-amber-300 leading-snug">
+        <div className="space-y-1">
+          <span className="text-[10px] uppercase font-bold tracking-wider text-amber-400/90 block">
+            {creative.sponsor}
+          </span>
+          <h3 className="text-base sm:text-lg font-black text-white leading-snug">
             {creative.title}
           </h3>
           <p className="text-xs text-slate-300 leading-relaxed">
@@ -279,9 +346,9 @@ export const InterstitialAdModal: React.FC<InterstitialAdModalProps> = ({
         </div>
 
         {/* Special Coupon Promo */}
-        <div className="w-full p-3 bg-slate-800/80 rounded-2xl border border-slate-700/60 text-left space-y-1 text-xs">
+        <div className="w-full p-2.5 bg-slate-800/80 rounded-2xl border border-slate-700/60 text-left space-y-1 text-xs">
           <div className="flex justify-between items-center text-slate-300 font-bold">
-            <span className="text-[11px] text-slate-200">GharKaExpert Sponsor Perk</span>
+            <span className="text-[11px] text-slate-200">GharKaExpert Sponsor Deal</span>
             <span className="text-emerald-400 font-mono font-black bg-emerald-950/60 px-2 py-0.5 rounded border border-emerald-500/30">
               {creative.coupon}
             </span>
@@ -289,14 +356,43 @@ export const InterstitialAdModal: React.FC<InterstitialAdModalProps> = ({
           <p className="text-[10px] text-slate-400">{creative.couponDiscount}</p>
         </div>
 
-        {/* Action Button */}
-        <button
-          onClick={handleFinish}
-          className="w-full py-3 bg-gradient-to-r from-amber-500 to-amber-400 hover:from-amber-400 hover:to-amber-300 text-slate-950 font-black rounded-xl text-sm transition-all shadow-lg active:scale-95 cursor-pointer flex items-center justify-center gap-1.5"
-        >
-          <span>Continue to Contact 📞</span>
-          <ChevronRight className="w-4 h-4" />
-        </button>
+        {/* Playback Status & Action Button */}
+        <div className="w-full space-y-2 pt-1">
+          <div className="text-[11px] text-amber-300/90 font-semibold flex items-center justify-center gap-1.5">
+            {isFinishing || countdown === 0 ? (
+              <span className="inline-flex items-center gap-1 text-emerald-400 font-bold animate-pulse">
+                <CheckCircle2 className="w-3.5 h-3.5" /> Ad complete! Proceeding to connection...
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-1 text-slate-400">
+                <Play className="w-3 h-3 text-amber-400 fill-amber-400" />
+                Ad playing first • Connecting in <strong className="text-white font-mono">{countdown}s</strong>
+              </span>
+            )}
+          </div>
+
+          <button
+            onClick={handleFinish}
+            disabled={isFinishing}
+            className="w-full py-3 bg-gradient-to-r from-amber-500 via-amber-400 to-yellow-400 hover:from-amber-400 hover:to-yellow-300 text-slate-950 font-black rounded-xl text-sm transition-all shadow-lg active:scale-95 cursor-pointer flex items-center justify-center gap-2"
+          >
+            {isFinishing ? (
+              <>
+                <span className="w-4 h-4 border-2 border-slate-950 border-t-transparent rounded-full animate-spin" />
+                <span>Connecting Now...</span>
+              </>
+            ) : (
+              <>
+                <span>
+                  {actionType === 'instant_dispatch'
+                    ? (countdown <= 1 ? 'Proceed to Auto-Match ⚡' : 'Skip Ad & Auto-Match Now ⚡')
+                    : (countdown <= 1 ? 'Proceed to Connection ⚡' : 'Skip & Connect Now ⚡')}
+                </span>
+                <ChevronRight className="w-4 h-4" />
+              </>
+            )}
+          </button>
+        </div>
       </motion.div>
     </div>
   );

@@ -14,16 +14,17 @@ import {
   BadgeCheck,
   RotateCcw,
   Plus,
-  Zap,
   DollarSign,
-  Radio,
   Edit,
   SlidersHorizontal,
-  Navigation
+  Navigation,
+  Zap,
+  Phone,
+  ChevronRight
 } from 'lucide-react';
 
 import { Language, UserRole, TradeCategory, WorkerProfile, PortfolioItem, SubContractJob, DirectBooking, Conversation, ChatMessage, PostInspectionQuote } from './types';
-import { t } from './data/translations';
+import { t, getCategoryLabel } from './data/translations';
 import { INITIAL_WORKERS, INITIAL_SUB_CONTRACTS } from './data/initialData';
 import { INITIAL_CONVERSATIONS } from './data/initialChats';
 
@@ -49,6 +50,7 @@ import { InboxModal } from './components/InboxModal';
 import { BannerAd, NativeAdCard, InterstitialAdModal } from './components/AdMobComponents';
 import { admobService, ADMOB_CONFIG } from './services/admobService';
 import { EmergencyDispatchModal } from './components/EmergencyDispatchModal';
+import { CategoryActionModal } from './components/CategoryActionModal';
 import { PostInspectionQuoteModal } from './components/PostInspectionQuoteModal';
 import { JobTrackerModal } from './components/JobTrackerModal';
 import { WorkerEditModal } from './components/WorkerEditModal';
@@ -87,7 +89,27 @@ export default function App() {
   // Data Collections
   const [workersList, setWorkersList] = useState<WorkerProfile[]>(INITIAL_WORKERS);
   const [subContractJobs, setSubContractJobs] = useState<SubContractJob[]>(INITIAL_SUB_CONTRACTS);
-  const [myBookings, setMyBookings] = useState<DirectBooking[]>([]);
+  const [myBookings, setMyBookings] = useState<DirectBooking[]>([
+    {
+      id: 'booking-live-1',
+      customerName: 'Customer',
+      customerPhone: '+91 98765 43210',
+      workerId: 'w-1',
+      workerName: 'Ramesh Sharma (Rajmistri)',
+      trade: 'mason',
+      bookingDate: 'Today (Live GPS)',
+      timeSlot: 'En Route (8 Mins)',
+      address: 'Flat 402, Sunshine Heights, Mumbai',
+      isEmergency: false,
+      notes: 'Bathroom tile setting & masonry repair',
+      status: 'in_transit',
+      startServiceOtp: '7419',
+      otpVerified: false,
+      arrivalProgressPercent: 45,
+      estimatedArrivalMins: 8,
+      createdAt: new Date().toISOString()
+    }
+  ]);
   const [conversations, setConversations] = useState<Conversation[]>(INITIAL_CONVERSATIONS);
 
   // Modals State
@@ -101,13 +123,26 @@ export default function App() {
   const [showInboxModal, setShowInboxModal] = useState(false);
 
   // GharKaExpert Modal States
+  const [categoryActionModal, setCategoryActionModal] = useState<{
+    isOpen: boolean;
+    category: TradeCategory;
+  }>({
+    isOpen: false,
+    category: 'plumber',
+  });
   const [showEmergencyDispatch, setShowEmergencyDispatch] = useState(false);
   const [showInterstitialAd, setShowInterstitialAd] = useState(false);
   const [interstitialTitle, setInterstitialTitle] = useState('GharKaExpert Partner Sponsor');
-  const [pendingContactAction, setPendingContactAction] = useState<{
-    worker: WorkerProfile;
-    mode: 'call' | 'whatsapp';
-  } | null>(null);
+  const [interstitialSubtitle, setInterstitialSubtitle] = useState<string | undefined>(undefined);
+  const [dispatchWithAd, setDispatchWithAd] = useState<boolean>(true);
+
+  type PendingAdAction =
+    | { type: 'call'; worker: WorkerProfile }
+    | { type: 'whatsapp'; worker: WorkerProfile }
+    | { type: 'instant_dispatch'; category: TradeCategory; targetWorker?: WorkerProfile }
+    | { type: 'booking_tracker'; booking: DirectBooking };
+
+  const [pendingAdAction, setPendingAdAction] = useState<PendingAdAction | null>(null);
   const [activeTrackerBooking, setActiveTrackerBooking] = useState<DirectBooking | null>(null);
 
   // Initialize AdMob on component mount
@@ -115,15 +150,60 @@ export default function App() {
     admobService.initialize();
   }, []);
 
-  // Trigger Google AdMob Interstitial Ad on worker contact/call buttons
+  // Trigger Google AdMob Interstitial Ad right when user connects via In-App Masked Call or Chat
   const handleInitiateContact = (worker: WorkerProfile, mode: 'call' | 'whatsapp') => {
-    setPendingContactAction({ worker, mode });
+    setPendingAdAction({ type: mode, worker });
     setInterstitialTitle(
       mode === 'call'
-        ? `Connecting Call to ${worker.name} • AdMob Sponsor`
-        : `Opening WhatsApp for ${worker.name} • AdMob Sponsor`
+        ? `Connecting Masked Call to ${worker.name} • Google AdMob`
+        : `Connecting In-App Chat with ${worker.name} • Google AdMob`
+    );
+    setInterstitialSubtitle(
+      mode === 'call'
+        ? `Encrypted in-app routing to ${worker.name} (Ext #${worker.id.replace('worker-', '')}) with platform warranty protection.`
+        : `Opening secure in-app messaging with ${worker.name}. Anti-bypass platform protected.`
     );
     setShowInterstitialAd(true);
+  };
+
+  // When user clicks a category icon: open popup with exactly two options (Instant Dispatch vs Browse Profiles)
+  const handleCategoryIconClick = (cat: TradeCategory | 'all') => {
+    if (cat === 'all') {
+      setSelectedCategory('all');
+      return;
+    }
+    setCategoryActionModal({
+      isOpen: true,
+      category: cat,
+    });
+  };
+
+  // Option 1: 'Instant Dispatch'
+  // Automatically search and connect with an available worker within a 2km radius using the Fair Rotation algorithm (triggering an Interstitial ad first).
+  const handleInstantDispatchFromCategory = (category: TradeCategory) => {
+    setCategoryActionModal(prev => ({ ...prev, isOpen: false }));
+    setSelectedCategory(category);
+    const catLabel = getCategoryLabel(category, currentLanguage) || category;
+    setPendingAdAction({ type: 'instant_dispatch', category });
+    setInterstitialTitle(`Instant Dispatch: ${catLabel} • Google AdMob`);
+    setInterstitialSubtitle(
+      `Auto-matching available ${catLabel} within a 2km radius using Fair Rotation algorithm. 15-min arrival with 0% commission.`
+    );
+    setShowInterstitialAd(true);
+  };
+
+  // Option 2: 'Browse Profiles'
+  // Let the user scroll down to view worker profiles, check details, and call or connect manually.
+  const handleBrowseProfilesFromCategory = (category: TradeCategory) => {
+    setCategoryActionModal(prev => ({ ...prev, isOpen: false }));
+    setSelectedCategory(category);
+    setActiveTab('workers');
+    setTimeout(() => {
+      const el = document.getElementById('karigar-profiles-list');
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth' });
+      }
+    }, 120);
   };
 
   // Post inspection quote modal state
@@ -140,8 +220,8 @@ export default function App() {
   // Unread messages count
   const totalUnreadCount = conversations.reduce((acc, c) => acc + c.unreadCount, 0);
 
-  // Open Chat Handler for a given Worker
-  const handleOpenChatForWorker = (worker: WorkerProfile) => {
+  // Open Chat Handler for a given Worker (with optional initial message)
+  const handleOpenChatForWorker = (worker: WorkerProfile, initialMessage?: string) => {
     const existing = conversations.find(c => c.workerId === worker.id);
     if (!existing) {
       const newConv: Conversation = {
@@ -149,16 +229,36 @@ export default function App() {
         workerName: worker.name,
         workerPhoto: worker.photoUrl,
         workerTrade: worker.primaryTrade,
-        workerPhone: worker.phone,
+        workerPhone: `Ext #${worker.id.replace('worker-', '')} [Masked]`,
         dailyRate: worker.dailyRate,
-        lastMessage: 'Chat started',
+        lastMessage: initialMessage || 'In-app chat started',
         lastTimestamp: 'Just now',
         unreadCount: 0,
-        messages: [],
+        messages: initialMessage ? [{
+          id: `msg-${Date.now()}`,
+          sender: 'customer',
+          text: initialMessage,
+          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        }] : [],
       };
       setConversations(prev => [newConv, ...prev]);
     } else {
-      setConversations(prev => prev.map(c => c.workerId === worker.id ? { ...c, unreadCount: 0 } : c));
+      if (initialMessage) {
+        setConversations(prev => prev.map(c => c.workerId === worker.id ? {
+          ...c,
+          unreadCount: 0,
+          lastMessage: initialMessage,
+          lastTimestamp: 'Just now',
+          messages: [...c.messages, {
+            id: `msg-${Date.now()}`,
+            sender: 'customer',
+            text: initialMessage,
+            timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+          }]
+        } : c));
+      } else {
+        setConversations(prev => prev.map(c => c.workerId === worker.id ? { ...c, unreadCount: 0 } : c));
+      }
     }
     setActiveChatWorkerId(worker.id);
   };
@@ -264,11 +364,17 @@ export default function App() {
 
   // Direct Booking Confirm
   const handleConfirmBooking = (newBooking: DirectBooking) => {
-    setMyBookings((prev) => [newBooking, ...prev]);
-    setActiveTrackerBooking(newBooking);
-
-    // Trigger Interstitial AdMob Ad on Booking Confirmation
-    setInterstitialTitle('Booking Confirmed! AdMob Sponsor Offer');
+    const bookingWithOtp: DirectBooking = {
+      ...newBooking,
+      startServiceOtp: newBooking.startServiceOtp || Math.floor(1000 + Math.random() * 9000).toString(),
+      otpVerified: false,
+      arrivalProgressPercent: newBooking.arrivalProgressPercent ?? 20,
+      estimatedArrivalMins: newBooking.estimatedArrivalMins ?? 12,
+    };
+    setMyBookings((prev) => [bookingWithOtp, ...prev]);
+    setPendingAdAction({ type: 'booking_tracker', booking: bookingWithOtp });
+    setInterstitialTitle('Booking Confirmed! Google AdMob Sponsor Offer');
+    setInterstitialSubtitle('Your Karigar appointment is locked. Sponsored by Google AdMob.');
     setShowInterstitialAd(true);
   };
 
@@ -282,18 +388,22 @@ export default function App() {
       workerId: worker.id,
       workerName: worker.name,
       trade: selectedCategory !== 'all' ? selectedCategory : worker.primaryTrade,
-      bookingDate: 'Today (Emergency Dispatch)',
-      timeSlot: 'ASAP (15 Mins)',
-      address: 'Current Live GPS Location',
+      bookingDate: 'Today (Instant Dispatch)',
+      timeSlot: 'Live GPS (15 Mins)',
+      address: 'Current Live GPS Location (Doorstep)',
       isEmergency: true,
-      notes: 'Emergency Uber-style callout',
+      notes: 'Instant Direct Connect Dispatch',
       status: 'in_transit',
+      startServiceOtp: Math.floor(1000 + Math.random() * 9000).toString(),
+      otpVerified: false,
+      arrivalProgressPercent: 25,
+      estimatedArrivalMins: 11,
       createdAt: new Date().toISOString()
     };
     setMyBookings((prev) => [emergencyBooking, ...prev]);
-    setActiveTrackerBooking(emergencyBooking);
-
-    setInterstitialTitle('Emergency Dispatch Active - Partner Sponsor');
+    setPendingAdAction({ type: 'booking_tracker', booking: emergencyBooking });
+    setInterstitialTitle(`Karigar Dispatched: ${worker.name} • Google AdMob`);
+    setInterstitialSubtitle(`Live GPS tracking for ${worker.name} will begin once sponsor message completes.`);
     setShowInterstitialAd(true);
   };
 
@@ -435,35 +545,15 @@ export default function App() {
                 </div>
               </div>
 
-              {/* Mode 1 vs Mode 2 Hybrid Booking Banner */}
-              <div className="p-3.5 bg-gradient-to-r from-red-600 via-rose-600 to-amber-600 rounded-2xl text-white shadow-lg space-y-2">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <div className="p-2 bg-black/30 rounded-xl text-yellow-300">
-                      <Zap className="w-5 h-5 fill-yellow-300" />
-                    </div>
-                    <div>
-                      <span className="text-[10px] font-black uppercase bg-black/30 px-2 py-0.5 rounded text-yellow-300">
-                        Mode 1: Instant Uber-Style Callout
-                      </span>
-                      <h4 className="text-sm font-extrabold text-white">Emergency Dispatch (30s Match)</h4>
-                    </div>
-                  </div>
-
-                  <button
-                    onClick={() => setShowEmergencyDispatch(true)}
-                    className="py-2 px-3.5 bg-yellow-400 hover:bg-yellow-300 text-slate-950 font-black rounded-xl text-xs shadow-md transition-all active:scale-95 cursor-pointer flex items-center gap-1"
-                  >
-                    <span>Instant Dispatch</span>
-                    <Radio className="w-3.5 h-3.5 animate-pulse" />
-                  </button>
-                </div>
-              </div>
-
               {/* Service Categories Grid */}
               <CategoryGrid
                 selectedCategory={selectedCategory}
-                onSelectCategory={(cat) => setSelectedCategory(cat)}
+                onSelectCategory={(cat) => {
+                  setSelectedCategory(cat);
+                  if (cat !== 'all') {
+                    handleInitiateInstantDispatch(cat);
+                  }
+                }}
                 currentLanguage={currentLanguage}
               />
 
@@ -573,7 +663,35 @@ export default function App() {
 
               {/* TAB 1: WORKERS LIST WITH NATIVE ADMOB CARD */}
               {activeTab === 'workers' && (
-                <div className="space-y-3">
+                <div id="karigar-profiles-list" className="space-y-3">
+                  {/* Verified Karigars & Direct Connect Header */}
+                  <div className="bg-white border border-slate-200 rounded-2xl p-3 sm:p-3.5 shadow-2xs flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <div className="flex items-center gap-2.5">
+                      <div className="p-2 bg-blue-50 text-blue-700 rounded-xl border border-blue-200 shrink-0">
+                        <Users className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-[9px] font-bold text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded-full font-mono">
+                            🔒 Masked Routing
+                          </span>
+                          <h3 className="text-sm font-extrabold text-slate-900">
+                            Verified Karigar Profiles & In-App Connect
+                          </h3>
+                        </div>
+                        <p className="text-xs text-slate-500">
+                          Personal numbers shielded. Connect directly via <strong className="text-emerald-700">Call via App (Masked)</strong> or <strong className="text-blue-700">In-App Chat / Book</strong>.
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-1.5 text-[11px] font-bold text-slate-600 bg-slate-50 px-2.5 py-1 rounded-xl border border-slate-200 shrink-0 self-start sm:self-center">
+                      <span className="text-emerald-700">🔒 Anti-Bypass Protected</span>
+                      <span>•</span>
+                      <span>30-Day Platform Warranty</span>
+                    </div>
+                  </div>
+
                   {filteredWorkers.length > 0 ? (
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
                       {filteredWorkers.map((worker, index) => (
@@ -705,20 +823,44 @@ export default function App() {
                             <span className="font-extrabold text-slate-900 text-xs">
                               {b.workerName} ({b.trade.toUpperCase()})
                             </span>
-                            <span className="px-2 py-0.5 bg-emerald-100 text-emerald-800 rounded-md text-[10px] font-extrabold">
-                              {b.status.toUpperCase()}
-                            </span>
+                            <div className="flex items-center gap-1.5">
+                              {b.startServiceOtp && (
+                                <span className="px-2 py-0.5 bg-amber-50 text-amber-900 border border-amber-300 rounded-md text-[10px] font-mono font-bold flex items-center gap-1">
+                                  <span>OTP:</span>
+                                  <span className="text-amber-700 font-black">{b.startServiceOtp}</span>
+                                </span>
+                              )}
+                              <span className={`px-2 py-0.5 rounded-md text-[10px] font-extrabold ${
+                                b.status === 'work_started'
+                                  ? 'bg-blue-100 text-blue-800'
+                                  : b.status === 'in_transit'
+                                  ? 'bg-amber-100 text-amber-800 animate-pulse'
+                                  : 'bg-emerald-100 text-emerald-800'
+                              }`}>
+                                {b.status === 'in_transit' ? '🛵 IN TRANSIT' : b.status.toUpperCase()}
+                              </span>
+                            </div>
                           </div>
                           <p className="text-xs text-slate-600">
                             <strong>Date & Slot:</strong> {b.bookingDate} ({b.timeSlot})
                           </p>
+                          {b.status === 'in_transit' && (
+                            <div className="p-2 bg-slate-50 border border-slate-200 rounded-xl flex items-center justify-between text-xs">
+                              <span className="text-slate-600 text-[11px] flex items-center gap-1">
+                                🛵 <strong>Live Tracking Active:</strong> Path to site
+                              </span>
+                              <span className="text-emerald-700 font-extrabold text-[11px]">
+                                {b.arrivalProgressPercent ? `${b.arrivalProgressPercent}% completed` : 'En Route'}
+                              </span>
+                            </div>
+                          )}
                           <div className="flex items-center justify-between pt-1">
                             <button
                               onClick={() => setActiveTrackerBooking(b)}
-                              className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl text-xs flex items-center gap-1 shadow-2xs"
+                              className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-xs flex items-center gap-1.5 shadow-2xs cursor-pointer"
                             >
                               <Navigation className="w-3.5 h-3.5" />
-                              <span>Track Status</span>
+                              <span>Live GPS Map & Start OTP</span>
                             </button>
 
                             {(b.trade.includes('mechanic') || b.trade.includes('ac')) && (
@@ -791,6 +933,10 @@ export default function App() {
                 workers={workersList}
                 currentLanguage={currentLanguage}
                 onWorkerAccepted={handleEmergencyWorkerAccepted}
+                onCallClick={(w) => {
+                  setShowEmergencyDispatch(false);
+                  handleInitiateContact(w, 'call');
+                }}
                 onCancel={() => setShowEmergencyDispatch(false)}
               />
             )}
@@ -814,6 +960,10 @@ export default function App() {
                   }}
                   onUpdateStatus={(newStatus) => {
                     const updated = { ...activeTrackerBooking, status: newStatus };
+                    setActiveTrackerBooking(updated);
+                    setMyBookings(prev => prev.map(b => b.id === updated.id ? updated : b));
+                  }}
+                  onUpdateBooking={(updated) => {
                     setActiveTrackerBooking(updated);
                     setMyBookings(prev => prev.map(b => b.id === updated.id ? updated : b));
                   }}
@@ -869,15 +1019,57 @@ export default function App() {
             {showInterstitialAd && (
               <InterstitialAdModal
                 title={interstitialTitle}
+                subtitle={interstitialSubtitle}
                 adUnitId={ADMOB_CONFIG.interstitialAdUnitId}
+                actionType={pendingAdAction?.type === 'instant_dispatch' ? 'instant_dispatch' : 'call'}
+                targetWorkerName={
+                  pendingAdAction && 'worker' in pendingAdAction
+                    ? pendingAdAction.worker.name
+                    : undefined
+                }
                 onClose={() => {
                   setShowInterstitialAd(false);
-                  if (pendingContactAction) {
-                    setCommModal({
-                      worker: pendingContactAction.worker,
-                      mode: pendingContactAction.mode,
-                    });
-                    setPendingContactAction(null);
+                  if (pendingAdAction) {
+                    const action = pendingAdAction;
+                    setPendingAdAction(null);
+                    if (action.type === 'call') {
+                      setCommModal({
+                        worker: action.worker,
+                        mode: 'call',
+                      });
+                    } else if (action.type === 'whatsapp') {
+                      setCommModal({
+                        worker: action.worker,
+                        mode: 'whatsapp',
+                      });
+                    } else if (action.type === 'instant_dispatch') {
+                      setSelectedCategory(action.category);
+                      setShowEmergencyDispatch(true);
+                    } else if (action.type === 'booking_tracker') {
+                      setActiveTrackerBooking(action.booking);
+                    }
+                  }
+                }}
+                onProceedAction={() => {
+                  if (pendingAdAction) {
+                    const action = pendingAdAction;
+                    setPendingAdAction(null);
+                    if (action.type === 'call') {
+                      setCommModal({
+                        worker: action.worker,
+                        mode: 'call',
+                      });
+                    } else if (action.type === 'whatsapp') {
+                      setCommModal({
+                        worker: action.worker,
+                        mode: 'whatsapp',
+                      });
+                    } else if (action.type === 'instant_dispatch') {
+                      setSelectedCategory(action.category);
+                      setShowEmergencyDispatch(true);
+                    } else if (action.type === 'booking_tracker') {
+                      setActiveTrackerBooking(action.booking);
+                    }
                   }
                 }}
               />
@@ -921,6 +1113,14 @@ export default function App() {
                 mode={commModal.mode}
                 onClose={() => setCommModal({ worker: null, mode: null })}
                 currentLanguage={currentLanguage}
+                onOpenInAppChat={(w, initialMsg) => {
+                  setCommModal({ worker: null, mode: null });
+                  handleOpenChatForWorker(w, initialMsg);
+                }}
+                onBookService={(w) => {
+                  setCommModal({ worker: null, mode: null });
+                  setBookingWorker(w);
+                }}
               />
             )}
 

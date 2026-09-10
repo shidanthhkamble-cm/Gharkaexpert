@@ -8,6 +8,7 @@ import {
   Phone, 
   MessageSquare, 
   ShieldCheck, 
+  Lock,
   Volume2, 
   CheckCircle2, 
   Calendar,
@@ -165,6 +166,37 @@ export const WorkerDetailModal: React.FC<WorkerDetailModalProps> = ({
               </span>
             </div>
           </div>
+
+          {/* Karigar Contact In-App Masked Routing Display */}
+          <div className="mt-3 p-3 bg-slate-950/90 border border-slate-800 rounded-2xl flex items-center justify-between gap-3 shadow-inner">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <div className="w-8 h-8 rounded-xl bg-blue-500/20 text-blue-400 flex items-center justify-center shrink-0 border border-blue-500/30">
+                <ShieldCheck className="w-4 h-4" />
+              </div>
+              <div className="min-w-0">
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">In-App Routing</span>
+                  <span className="text-[9px] font-black bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 px-1.5 py-0.2 rounded">
+                    🔒 Number Masked
+                  </span>
+                </div>
+                <span className="text-sm font-mono font-black text-slate-200 block truncate">
+                  GKE-VIRTUAL • Ext #{worker.id.replace('worker-', '')}
+                </span>
+                <span className="text-[10px] text-slate-400 block truncate">
+                  Personal number hidden for safety & platform warranty
+                </span>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => onCallClick(worker)}
+              className="py-2 px-3.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold transition-all shadow-md flex items-center gap-1.5 shrink-0 cursor-pointer active:scale-95"
+            >
+              <Phone className="w-3.5 h-3.5 fill-white" />
+              <span>Call via App</span>
+            </button>
+          </div>
         </div>
 
         {/* Tab Navigation */}
@@ -277,40 +309,34 @@ export const WorkerDetailModal: React.FC<WorkerDetailModalProps> = ({
         </div>
 
         {/* Bottom Action CTA Bar */}
-        <div className="p-4 bg-slate-950 border-t border-slate-800 flex items-center justify-between gap-2">
-          <div className="flex items-center gap-1.5 overflow-x-auto">
+        <div className="p-4 bg-slate-950 border-t border-slate-800 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5">
+          <div className="flex items-center gap-2">
             {onChatClick && (
               <button
                 onClick={() => onChatClick(worker)}
-                className="py-2.5 px-3 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl text-xs flex items-center gap-1.5 shadow-md shrink-0"
+                className="py-2.5 px-3.5 bg-blue-600 hover:bg-blue-500 text-white font-black rounded-xl text-xs flex items-center gap-1.5 shadow-md cursor-pointer transition-all active:scale-95"
               >
-                <MessageSquare className="w-4 h-4" />
-                <span>Chat</span>
+                <MessageSquare className="w-4 h-4 fill-white" />
+                <span>In-App Chat</span>
               </button>
             )}
 
             <button
-              onClick={() => onCallClick(worker)}
-              className="py-2.5 px-3 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl text-xs flex items-center gap-1.5 shadow-md shrink-0"
+              onClick={() => onBookClick(worker)}
+              className="py-2.5 px-3.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-black rounded-xl text-xs flex items-center gap-1.5 shadow-md cursor-pointer transition-all active:scale-95"
             >
-              <Phone className="w-4 h-4" />
-              <span>Call</span>
-            </button>
-
-            <button
-              onClick={() => onWhatsappClick(worker)}
-              className="py-2.5 px-3 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold rounded-xl text-xs flex items-center gap-1.5 shadow-md shrink-0"
-            >
-              <MessageSquare className="w-4 h-4 fill-slate-950 text-emerald-500" />
-              <span>WhatsApp</span>
+              <Calendar className="w-4 h-4" />
+              <span>Book via App</span>
             </button>
           </div>
 
           <button
-            onClick={() => onBookClick(worker)}
-            className="py-2.5 px-4 bg-amber-500 hover:bg-amber-400 text-slate-950 font-black rounded-xl text-xs sm:text-sm flex items-center gap-1 shadow-xl shrink-0 cursor-pointer"
+            onClick={() => onCallClick(worker)}
+            className="flex-1 sm:flex-initial py-3 px-5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-black rounded-xl text-xs sm:text-sm flex items-center justify-center gap-2 shadow-xl shrink-0 cursor-pointer active:scale-95 transition-all"
+            title="Call via Secure Masked App Routing"
           >
-            <span>Book Karigar 📅</span>
+            <Phone className="w-4 h-4 fill-white animate-pulse" />
+            <span>Call via App (Masked)</span>
           </button>
         </div>
       </motion.div>

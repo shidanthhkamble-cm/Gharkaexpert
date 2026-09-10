@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { DirectBooking, WorkerProfile, Language } from '../types';
 import { getCategoryLabel } from '../data/translations';
+import { LiveArrivalTracker } from './LiveArrivalTracker';
 
 interface JobTrackerModalProps {
   booking: DirectBooking;
@@ -24,6 +25,7 @@ interface JobTrackerModalProps {
   onCallClick: (worker: WorkerProfile) => void;
   onOpenQuoteModal?: () => void;
   onUpdateStatus?: (newStatus: DirectBooking['status']) => void;
+  onUpdateBooking?: (updated: DirectBooking) => void;
   onClose: () => void;
 }
 
@@ -43,6 +45,7 @@ export const JobTrackerModal: React.FC<JobTrackerModalProps> = ({
   onCallClick,
   onOpenQuoteModal,
   onUpdateStatus,
+  onUpdateBooking,
   onClose,
 }) => {
   const currentStepIndex = STATUS_STEPS.findIndex(s => s.id === booking.status);
@@ -50,13 +53,21 @@ export const JobTrackerModal: React.FC<JobTrackerModalProps> = ({
 
   const tradeLabel = getCategoryLabel(booking.trade, currentLanguage);
 
+  const handleBookingUpdate = (updated: DirectBooking) => {
+    if (onUpdateBooking) {
+      onUpdateBooking(updated);
+    } else if (onUpdateStatus && updated.status !== booking.status) {
+      onUpdateStatus(updated.status);
+    }
+  };
+
   return (
     <div className="fixed inset-0 z-50 bg-slate-900/80 backdrop-blur-md flex items-center justify-center p-3 sm:p-4">
       <motion.div
         initial={{ scale: 0.95, opacity: 0, y: 15 }}
         animate={{ scale: 1, opacity: 1, y: 0 }}
         exit={{ scale: 0.95, opacity: 0 }}
-        className="w-full max-w-md bg-white border border-slate-200 rounded-3xl shadow-2xl overflow-hidden text-slate-800 relative flex flex-col max-h-[90vh]"
+        className="w-full max-w-lg bg-white border border-slate-200 rounded-3xl shadow-2xl overflow-hidden text-slate-800 relative flex flex-col max-h-[92vh]"
       >
         {/* Header */}
         <div className="p-4 bg-slate-900 text-white flex items-center justify-between border-b border-slate-800 shrink-0">
@@ -65,14 +76,14 @@ export const JobTrackerModal: React.FC<JobTrackerModalProps> = ({
               <Navigation className="w-5 h-5" />
             </div>
             <div>
-              <h3 className="font-extrabold text-base text-white">Real-time Job Tracker</h3>
-              <p className="text-xs text-emerald-300">Live Status & ETA updates</p>
+              <h3 className="font-extrabold text-base text-white">Live Arrival & Job Tracker</h3>
+              <p className="text-xs text-emerald-300">Real-time GPS path & Doorstep OTP</p>
             </div>
           </div>
 
           <button
             onClick={onClose}
-            className="p-1.5 text-slate-400 hover:text-white bg-slate-800 rounded-xl"
+            className="p-1.5 text-slate-400 hover:text-white bg-slate-800 rounded-xl cursor-pointer"
           >
             <X className="w-5 h-5" />
           </button>
@@ -90,21 +101,21 @@ export const JobTrackerModal: React.FC<JobTrackerModalProps> = ({
                   <span className="text-[10px] bg-emerald-100 text-emerald-800 font-bold px-1.5 py-0.2 rounded">Verified</span>
                 </div>
                 <p className="text-xs text-blue-700 font-semibold">{tradeLabel}</p>
-                <p className="text-[10px] text-slate-500">{worker.city} • {worker.distanceKm} km away</p>
+                <p className="text-[10px] text-slate-500">{worker.city} • GKE-VIRTUAL Ext #{worker.id.replace('worker-', '')}</p>
               </div>
             </div>
 
             <div className="flex items-center gap-1.5 shrink-0">
               <button
                 onClick={() => onCallClick(worker)}
-                className="p-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl shadow-xs transition-all"
-                title="Masked Call"
+                className="p-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl shadow-xs transition-all cursor-pointer"
+                title="Masked In-App Call"
               >
                 <Phone className="w-4 h-4" />
               </button>
               <button
                 onClick={() => onOpenChat(worker.id)}
-                className="p-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl shadow-xs transition-all"
+                className="p-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl shadow-xs transition-all cursor-pointer"
                 title="In-App Chat"
               >
                 <MessageSquare className="w-4 h-4" />
@@ -115,14 +126,14 @@ export const JobTrackerModal: React.FC<JobTrackerModalProps> = ({
           {/* Status Workflow Progress Bar */}
           <div className="p-4 bg-slate-900 text-white rounded-2xl space-y-3">
             <div className="flex items-center justify-between text-xs border-b border-slate-800 pb-2">
-              <span className="font-bold text-slate-300">Status Workflow</span>
+              <span className="font-bold text-slate-300">Booking Status:</span>
               <span className="font-black text-emerald-400 uppercase tracking-wider text-[11px]">
                 {STATUS_STEPS[activeStep]?.label}
               </span>
             </div>
 
             {/* Stepper Dots */}
-            <div className="grid grid-cols-5 gap-1 text-center py-2 relative">
+            <div className="grid grid-cols-5 gap-1 text-center py-1 relative">
               {STATUS_STEPS.map((step, idx) => {
                 const isDone = idx <= activeStep;
                 const isCurrent = idx === activeStep;
@@ -147,15 +158,17 @@ export const JobTrackerModal: React.FC<JobTrackerModalProps> = ({
                 );
               })}
             </div>
-
-            {/* ETA / Arrival notice */}
-            <div className="p-2.5 bg-slate-800/90 rounded-xl text-xs flex items-center justify-between text-slate-300">
-              <span className="flex items-center gap-1.5 font-medium">
-                <Clock className="w-3.5 h-3.5 text-amber-400" /> Estimated Arrival:
-              </span>
-              <span className="font-extrabold text-amber-300">12 - 15 Mins</span>
-            </div>
           </div>
+
+          {/* Embedded Live Arrival Map & Secure Start Service OTP Verification Module */}
+          <LiveArrivalTracker
+            booking={booking}
+            worker={worker}
+            currentLanguage={currentLanguage}
+            onUpdateBooking={handleBookingUpdate}
+            onCallClick={onCallClick}
+            onChatClick={onOpenChat}
+          />
 
           {/* Post-Inspection Quote Card (if Mechanic / Appliance or exists) */}
           {booking.quote ? (
@@ -183,7 +196,7 @@ export const JobTrackerModal: React.FC<JobTrackerModalProps> = ({
                 {onOpenQuoteModal && (
                   <button
                     onClick={onOpenQuoteModal}
-                    className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl text-xs shrink-0 shadow-xs"
+                    className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl text-xs shrink-0 shadow-xs cursor-pointer"
                   >
                     Send / View Quote
                   </button>
@@ -200,8 +213,19 @@ export const JobTrackerModal: React.FC<JobTrackerModalProps> = ({
                 {STATUS_STEPS.map((step) => (
                   <button
                     key={step.id}
-                    onClick={() => onUpdateStatus(step.id)}
-                    className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition-all ${
+                    onClick={() => {
+                      onUpdateStatus(step.id);
+                      if (step.id === 'work_started') {
+                        handleBookingUpdate({
+                          ...booking,
+                          status: 'work_started',
+                          otpVerified: true,
+                          serviceStartedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                          arrivalProgressPercent: 100
+                        });
+                      }
+                    }}
+                    className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition-all cursor-pointer ${
                       booking.status === step.id
                         ? 'bg-slate-900 text-white shadow-xs'
                         : 'bg-white text-slate-700 border border-slate-300 hover:bg-slate-200'
@@ -218,3 +242,4 @@ export const JobTrackerModal: React.FC<JobTrackerModalProps> = ({
     </div>
   );
 };
+

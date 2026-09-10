@@ -172,24 +172,31 @@ export const SubContractBoard: React.FC<SubContractBoardProps> = ({
             <div className="mt-3 pt-3 border-t border-slate-800 flex items-center justify-between">
               <div>
                 <span className="text-[10px] text-slate-400 block">Posted By Contractor:</span>
-                <span className="text-xs font-bold text-white">{job.contractorName}</span>
+                <div className="flex items-center gap-1.5">
+                  <span className="text-xs font-bold text-white">{job.contractorName}</span>
+                  <span className="text-[9px] font-mono text-emerald-400 bg-emerald-950/60 px-1 py-0.2 rounded border border-emerald-500/30">
+                    🔒 Masked
+                  </span>
+                </div>
               </div>
 
               <div className="flex items-center gap-2">
                 <button
                   onClick={() => onCallContractor(job.contractorPhone, job.contractorName)}
-                  className="py-2 px-3 bg-green-600 hover:bg-green-700 text-white font-bold rounded-xl text-xs flex items-center gap-1 shadow-sm active:scale-95"
+                  className="py-2 px-3 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl text-xs flex items-center gap-1 shadow-sm active:scale-95 cursor-pointer"
+                  title="Connect via Secure In-App Masked Line"
                 >
                   <Phone className="w-3.5 h-3.5" />
-                  <span>Call Contractor</span>
+                  <span>App Call (Masked)</span>
                 </button>
 
                 <button
                   onClick={() => onWhatsappContractor(job.contractorPhone, job.contractorName, job.title)}
-                  className="py-2 px-3 bg-green-500 hover:bg-green-600 text-white font-bold rounded-xl text-xs flex items-center gap-1 shadow-sm active:scale-95"
+                  className="py-2 px-3 bg-slate-800 hover:bg-slate-700 text-blue-300 font-bold rounded-xl text-xs flex items-center gap-1 shadow-sm active:scale-95 border border-slate-700 cursor-pointer"
+                  title="In-App Messaging"
                 >
-                  <MessageSquare className="w-3.5 h-3.5 fill-white text-green-500" />
-                  <span>WhatsApp</span>
+                  <MessageSquare className="w-3.5 h-3.5" />
+                  <span>In-App Chat</span>
                 </button>
               </div>
             </div>

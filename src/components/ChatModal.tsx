@@ -147,6 +147,8 @@ export const ChatModal: React.FC<ChatModalProps> = ({
                   {getCategoryLabel(worker.primaryTrade, currentLanguage)}
                 </span>
                 <span>•</span>
+                <span className="text-amber-300 font-mono text-[11px]">Ext #{worker.id.replace('worker-', '')}</span>
+                <span>•</span>
                 <span className="text-emerald-400 font-medium text-[11px]">Online</span>
               </div>
             </div>
@@ -169,11 +171,11 @@ export const ChatModal: React.FC<ChatModalProps> = ({
               </span>
             </button>
 
-            {/* Direct Call Button */}
+            {/* In-App Masked Call Button */}
             <button
               onClick={() => onCallClick(worker)}
-              className="p-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl shadow-sm transition-all"
-              title="In-App Direct Call"
+              className="p-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl shadow-sm transition-all cursor-pointer"
+              title="In-App Masked Call (Anti-Bypass)"
             >
               <Phone className="w-4 h-4" />
             </button>
@@ -211,10 +213,10 @@ export const ChatModal: React.FC<ChatModalProps> = ({
                 <MessageSquare className="w-6 h-6" />
               </div>
               <p className="text-xs font-medium text-slate-600">
-                Start direct conversation with {worker.name}
+                Secure conversation with {worker.name}
               </p>
               <p className="text-[11px] text-slate-400">
-                Zero brokerage • Direct contact with verified Karigar
+                🔒 In-App Protected • Personal numbers masked • 30-Day Platform Warranty
               </p>
             </div>
           ) : (

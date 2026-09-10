@@ -72,33 +72,51 @@ export const CategoryGrid: React.FC<CategoryGridProps> = ({
     <div className="space-y-3.5 bg-white p-3.5 sm:p-4 rounded-2xl border border-slate-200 shadow-xs">
       {/* Header & Section Filter Tabs */}
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-2.5">
-        <div className="flex items-center gap-2">
-          <div className="p-1.5 bg-blue-600 text-white rounded-lg shadow-xs">
-            <Sparkles className="w-4 h-4" />
+        <div className="flex items-center gap-2.5">
+          <div className="p-2 bg-emerald-600 text-white rounded-xl shadow-xs">
+            <Zap className="w-4 h-4" />
           </div>
           <div>
-            <h3 className="text-sm font-extrabold text-slate-900 tracking-tight">
-              Services & GharKaExpert
-            </h3>
-            <p className="text-[10px] text-slate-500 font-medium">0% Commission • Direct Connect</p>
+            <div className="flex items-center gap-2">
+              <h3 className="text-sm font-extrabold text-slate-900 tracking-tight">
+                Service Categories • Instant Dispatch
+              </h3>
+              <span className="text-[10px] text-emerald-800 bg-emerald-100 font-bold px-2 py-0.5 rounded-full border border-emerald-200">
+                Fair Rotation
+              </span>
+            </div>
+            <p className="text-[11px] text-slate-500 font-normal">Click any service icon (Plumbing, Carpentry, Mason, etc.) to immediately auto-match nearest Karigar</p>
           </div>
         </div>
 
         {selectedCategory !== 'all' && (
           <button
             onClick={() => onSelectCategory('all')}
-            className="text-xs text-blue-600 hover:text-blue-800 font-bold underline"
+            className="text-xs text-blue-600 hover:text-blue-800 font-bold underline cursor-pointer"
           >
             Show All ({CATEGORIES.length})
           </button>
         )}
       </div>
 
+      {/* Instant Dispatch & Browse Profiles Notice Banner */}
+      <div className="p-2.5 bg-gradient-to-r from-emerald-50 via-teal-50 to-blue-50 border border-emerald-200/90 rounded-xl flex items-center justify-between text-xs text-slate-900 shadow-2xs">
+        <div className="flex items-center gap-2 min-w-0">
+          <Zap className="w-4 h-4 text-emerald-600 shrink-0" />
+          <span className="font-extrabold text-[11px] sm:text-xs truncate">
+            Tap any category below to choose <strong className="text-emerald-800">Instant Dispatch</strong> (2km Fair Rotation) or <strong className="text-blue-800">Browse Profiles</strong>
+          </span>
+        </div>
+        <span className="text-[10px] font-black text-blue-900 bg-blue-100 border border-blue-200 px-2 py-0.5 rounded-full shrink-0 ml-2">
+          ⚡ 2 Options
+        </span>
+      </div>
+
       {/* Sub-Category Section Tabs */}
       <div className="flex items-center gap-1.5 overflow-x-auto custom-scrollbar pb-1">
         <button
           onClick={() => setActiveSection('all')}
-          className={`px-3 py-1.5 rounded-full text-xs font-bold transition-all shrink-0 ${
+          className={`px-3 py-1.5 rounded-full text-xs font-bold transition-all shrink-0 cursor-pointer ${
             activeSection === 'all'
               ? 'bg-slate-900 text-white shadow-xs'
               : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
@@ -109,7 +127,7 @@ export const CategoryGrid: React.FC<CategoryGridProps> = ({
 
         <button
           onClick={() => setActiveSection('home')}
-          className={`px-3 py-1.5 rounded-full text-xs font-bold transition-all shrink-0 flex items-center gap-1.5 ${
+          className={`px-3 py-1.5 rounded-full text-xs font-bold transition-all shrink-0 flex items-center gap-1.5 cursor-pointer ${
             activeSection === 'home'
               ? 'bg-blue-600 text-white shadow-xs'
               : 'bg-blue-50 text-blue-700 hover:bg-blue-100'
@@ -120,7 +138,7 @@ export const CategoryGrid: React.FC<CategoryGridProps> = ({
 
         <button
           onClick={() => setActiveSection('appliance')}
-          className={`px-3 py-1.5 rounded-full text-xs font-bold transition-all shrink-0 flex items-center gap-1.5 ${
+          className={`px-3 py-1.5 rounded-full text-xs font-bold transition-all shrink-0 flex items-center gap-1.5 cursor-pointer ${
             activeSection === 'appliance'
               ? 'bg-indigo-600 text-white shadow-xs'
               : 'bg-indigo-50 text-indigo-700 hover:bg-indigo-100'
@@ -131,7 +149,7 @@ export const CategoryGrid: React.FC<CategoryGridProps> = ({
 
         <button
           onClick={() => setActiveSection('auto')}
-          className={`px-3 py-1.5 rounded-full text-xs font-bold transition-all shrink-0 flex items-center gap-1.5 ${
+          className={`px-3 py-1.5 rounded-full text-xs font-bold transition-all shrink-0 flex items-center gap-1.5 cursor-pointer ${
             activeSection === 'auto'
               ? 'bg-orange-600 text-white shadow-xs'
               : 'bg-orange-50 text-orange-700 hover:bg-orange-100'
@@ -142,7 +160,7 @@ export const CategoryGrid: React.FC<CategoryGridProps> = ({
       </div>
 
       {/* Icon Grid */}
-      <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-2.5">
+      <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-7 gap-2 sm:gap-2.5">
         {filteredCategories.map((cat) => {
           const isSelected = selectedCategory === cat.id;
           const label = getCategoryLabel(cat.id, currentLanguage);
@@ -154,18 +172,20 @@ export const CategoryGrid: React.FC<CategoryGridProps> = ({
               whileHover={{ scale: 1.04, y: -2 }}
               whileTap={{ scale: 0.95 }}
               onClick={() => onSelectCategory(isSelected ? 'all' : cat.id)}
-              className={`p-2 sm:p-2.5 rounded-2xl border flex flex-col items-center text-center justify-between transition-all relative shadow-2xs cursor-pointer h-[118px] group ${
+              className={`p-2 sm:p-2.5 rounded-2xl border flex flex-col items-center text-center justify-between transition-all relative shadow-2xs cursor-pointer h-[122px] group ${
                 isSelected
                   ? 'bg-blue-600 text-white border-blue-700 ring-2 ring-blue-500/40 font-bold shadow-md'
                   : 'bg-white hover:bg-slate-50/90 border-slate-200/90 hover:border-blue-400 text-slate-800 hover:shadow-sm'
               }`}
             >
               {/* Badge Tag */}
-              <span className={`text-[9px] font-black px-1.5 py-0.5 rounded-full uppercase tracking-wider ${
-                isSelected ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-600 border border-slate-200/60'
-              }`}>
-                {cat.tag}
-              </span>
+              <div className="w-full flex items-center justify-center h-4.5">
+                <span className={`text-[9px] font-black px-1.5 py-0.5 rounded-full uppercase tracking-wider truncate max-w-full ${
+                  isSelected ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-600 border border-slate-200/60'
+                }`}>
+                  {cat.tag}
+                </span>
+              </div>
 
               {/* 3D Isometric Icon Container */}
               <div className={`w-11 h-11 sm:w-12 sm:h-12 rounded-xl p-0.5 ${
@@ -179,9 +199,12 @@ export const CategoryGrid: React.FC<CategoryGridProps> = ({
                 />
               </div>
 
-              <span className={`text-[11px] font-extrabold leading-tight line-clamp-2 ${isSelected ? 'text-white' : 'text-slate-800'}`}>
-                {label}
-              </span>
+              {/* Label */}
+              <div className="w-full h-8 flex items-center justify-center px-0.5">
+                <span className={`text-[11px] font-extrabold leading-tight line-clamp-2 text-center ${isSelected ? 'text-white' : 'text-slate-800'}`}>
+                  {label}
+                </span>
+              </div>
 
               {isSelected && (
                 <span className="absolute -top-1 -right-1 w-4 h-4 bg-emerald-500 text-white text-[10px] rounded-full flex items-center justify-center font-black border-2 border-white shadow-xs">

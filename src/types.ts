@@ -115,6 +115,10 @@ export interface DirectBooking {
   isEmergency: boolean;
   notes: string;
   status: 'searching' | 'accepted' | 'in_transit' | 'work_started' | 'completed' | 'cancelled';
+  startServiceOtp?: string;
+  otpVerified?: boolean;
+  serviceStartedAt?: string;
+  arrivalProgressPercent?: number;
   quote?: PostInspectionQuote;
   createdAt: string;
   estimatedArrivalMins?: number;
