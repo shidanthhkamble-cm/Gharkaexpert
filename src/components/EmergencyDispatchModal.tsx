@@ -39,16 +39,35 @@ export const EmergencyDispatchModal: React.FC<EmergencyDispatchModalProps> = ({
   const [timer, setTimer] = useState(4);
   const [status, setStatus] = useState<'broadcasting' | 'accepted'>('broadcasting');
   const [acceptedWorker, setAcceptedWorker] = useState<WorkerProfile | null>(null);
+  const [autoCallCountdown, setAutoCallCountdown] = useState<number | null>(null);
 
-  // Filter & rank available workers strictly using the Fair Rotation Algorithm
-  const matchingWorkers = workers
-    .filter(w => category === 'all' || w.primaryTrade === category || w.additionalTrades?.includes(category))
-    .sort((a, b) => {
-      // Fair Rotation Algorithm prioritizes fresh Karigars and workers with zero recent bookings
-      const scoreA = (a.isNewKarigar ? 10 : 0) + (a.recentBookingCount === 0 ? 5 : 0) + (a.isAvailableToday ? 3 : 0) + (a.isEmergencyAvailable ? 2 : 0) + (a.rating / 5) - (a.distanceKm / 10);
-      const scoreB = (b.isNewKarigar ? 10 : 0) + (b.recentBookingCount === 0 ? 5 : 0) + (b.isAvailableToday ? 3 : 0) + (b.isEmergencyAvailable ? 2 : 0) + (b.rating / 5) - (b.distanceKm / 10);
-      return scoreB - scoreA;
-    });
+  // Filter strictly for the exact skill category selected (no combined skills)
+  const matchingTradeWorkers = workers.filter(
+    w => category === 'all' ? true : w.primaryTrade === category
+  );
+
+  // Strict 1.5 km radius filter for verified / available Karigars
+  const withinRadiusWorkers = matchingTradeWorkers.filter(w => w.distanceKm <= 1.5);
+  const eligiblePool = withinRadiusWorkers.length > 0 ? withinRadiusWorkers : matchingTradeWorkers;
+
+  const matchingWorkers = [...eligiblePool].sort((a, b) => {
+    // Rank nearest within 1.5km + Fair Rotation priority for low bookings and new karigars
+    const scoreA =
+      (a.distanceKm <= 1.5 ? 25 : 0) +
+      (a.isNewKarigar ? 10 : 0) +
+      (a.recentBookingCount === 0 ? 8 : 0) +
+      (a.isAvailableToday ? 5 : 0) +
+      (a.rating / 5) * 2 -
+      a.distanceKm * 5;
+    const scoreB =
+      (b.distanceKm <= 1.5 ? 25 : 0) +
+      (b.isNewKarigar ? 10 : 0) +
+      (b.recentBookingCount === 0 ? 8 : 0) +
+      (b.isAvailableToday ? 5 : 0) +
+      (b.rating / 5) * 2 -
+      b.distanceKm * 5;
+    return scoreB - scoreA;
+  });
 
   const topMatch = matchingWorkers[0] || workers[0];
 
@@ -62,16 +81,33 @@ export const EmergencyDispatchModal: React.FC<EmergencyDispatchModalProps> = ({
       if (timer === 2 && topMatch) {
         setAcceptedWorker(topMatch);
         setStatus('accepted');
+        setAutoCallCountdown(3);
       }
 
       return () => clearInterval(interval);
     }
   }, [timer, status, topMatch]);
 
+  // Auto-initiate masked call algorithm countdown once worker is matched
+  useEffect(() => {
+    if (status === 'accepted' && autoCallCountdown !== null && acceptedWorker) {
+      if (autoCallCountdown > 0) {
+        const timerId = setTimeout(() => {
+          setAutoCallCountdown((prev) => (prev !== null ? prev - 1 : 0));
+        }, 1000);
+        return () => clearTimeout(timerId);
+      } else if (autoCallCountdown === 0) {
+        // Automatically initiate the masked call connection algorithm
+        onCallClick?.(acceptedWorker);
+      }
+    }
+  }, [status, autoCallCountdown, acceptedWorker, onCallClick]);
+
   const handleInstantConnect = () => {
     if (topMatch) {
       setAcceptedWorker(topMatch);
       setStatus('accepted');
+      setAutoCallCountdown(3);
     }
   };
 
@@ -132,13 +168,13 @@ export const EmergencyDispatchModal: React.FC<EmergencyDispatchModalProps> = ({
               <div className="space-y-1">
                 <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-emerald-500/20 border border-emerald-400/40 rounded-full text-emerald-300 text-xs font-bold">
                   <Sparkles className="w-3.5 h-3.5 text-emerald-400" />
-                  <span>Fair Rotation Algorithm Active • 2km Radius</span>
+                  <span>Fair Rotation Algorithm • 1.5 km Strict Radius</span>
                 </div>
                 <h4 className="font-extrabold text-lg text-white">
-                  Finding Available {categoryLabel} within 2km...
+                  Finding Available {categoryLabel} within 1.5 km...
                 </h4>
                 <p className="text-xs text-slate-300">
-                  Auto-matching verified local Karigars in 2km radius via Fair Rotation. Direct connection, zero commission.
+                  Scanning verified local Karigars in 1.5 km geo-radius via Fair Rotation. Direct auto-masked call connection, 0% commission.
                 </p>
               </div>
 
@@ -194,14 +230,19 @@ export const EmergencyDispatchModal: React.FC<EmergencyDispatchModalProps> = ({
               <div className="space-y-1">
                 <span className="bg-emerald-500/20 text-emerald-300 font-extrabold text-[10px] px-2.5 py-0.5 rounded-full border border-emerald-500/40 inline-flex items-center gap-1">
                   <Sparkles className="w-3 h-3 text-emerald-400" />
-                  Fair Rotation Match Confirmed
+                  Fair Rotation Match Confirmed (≤ 1.5 km)
                 </span>
                 <h4 className="font-black text-xl text-white">
                   {acceptedWorker?.name}
                 </h4>
-                <p className="text-xs text-emerald-300">
-                  Ready for instant dispatch to your location!
-                </p>
+                <div className="flex items-center justify-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
+                  <p className="text-xs text-emerald-300 font-semibold">
+                    {autoCallCountdown !== null && autoCallCountdown > 0
+                      ? `Auto-connecting via Masked Call in ${autoCallCountdown}s...`
+                      : 'Masked Call Gateway Ready!'}
+                  </p>
+                </div>
               </div>
 
               {/* Matched Worker Details Card */}

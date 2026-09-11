@@ -70,6 +70,22 @@ export interface WorkerProfile {
   completedJobs: number;
   recentBookingCount: number; // used for Fair Rotation Algorithm
   isNewKarigar?: boolean; // badge for newly joined karigars
+  isFlaggedInAdmin?: boolean; // Flagged in Admin System for safety/behavior concerns
+  flagReason?: string;
+  adminFlaggedAt?: string;
+}
+
+export interface WorkerReview {
+  id: string;
+  bookingId: string;
+  workerId: string;
+  workerName: string;
+  customerName: string;
+  stars: number; // 1 to 5
+  tags: string[]; // e.g., "Professional & Polite", "Arrived on Time", "Unprofessional Behavior", "Safety Concerns"
+  comment?: string;
+  isFlaggedForAdminReview?: boolean;
+  createdAt: string;
 }
 
 export interface SubContractJob {
@@ -118,6 +134,9 @@ export interface DirectBooking {
   startServiceOtp?: string;
   otpVerified?: boolean;
   serviceStartedAt?: string;
+  serviceFinishedAt?: string;
+  rating?: number;
+  review?: WorkerReview;
   arrivalProgressPercent?: number;
   quote?: PostInspectionQuote;
   createdAt: string;

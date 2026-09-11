@@ -26,6 +26,7 @@ interface JobTrackerModalProps {
   onOpenQuoteModal?: () => void;
   onUpdateStatus?: (newStatus: DirectBooking['status']) => void;
   onUpdateBooking?: (updated: DirectBooking) => void;
+  onFinishService?: (booking: DirectBooking) => void;
   onClose: () => void;
 }
 
@@ -46,6 +47,7 @@ export const JobTrackerModal: React.FC<JobTrackerModalProps> = ({
   onOpenQuoteModal,
   onUpdateStatus,
   onUpdateBooking,
+  onFinishService,
   onClose,
 }) => {
   const currentStepIndex = STATUS_STEPS.findIndex(s => s.id === booking.status);
@@ -160,6 +162,32 @@ export const JobTrackerModal: React.FC<JobTrackerModalProps> = ({
             </div>
           </div>
 
+          {/* Customer "Finish Service" Primary Control */}
+          {booking.status === 'work_started' && onFinishService && (
+            <div className="p-4 bg-gradient-to-r from-emerald-600 via-teal-600 to-slate-900 text-white rounded-2xl shadow-xl space-y-2.5 border border-emerald-400/50">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-black uppercase tracking-wider text-emerald-200 flex items-center gap-1.5">
+                  <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-ping" />
+                  Service In-Progress at Doorstep
+                </span>
+                <span className="text-[10px] font-bold bg-white/20 px-2 py-0.5 rounded-full">
+                  Started {booking.serviceStartedAt || 'Today'}
+                </span>
+              </div>
+              <p className="text-xs text-white/90 leading-relaxed">
+                Work is currently active by <strong>{worker.name}</strong>. The booking stays marked <strong>In-Progress</strong> until you click "Finish Service".
+              </p>
+              <button
+                type="button"
+                onClick={() => onFinishService(booking)}
+                className="w-full py-3.5 bg-white hover:bg-slate-100 text-slate-950 font-black rounded-xl text-sm flex items-center justify-center gap-2 shadow-lg transition-all active:scale-95 cursor-pointer"
+              >
+                <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                <span>Finish Service (काम पूरा हुआ)</span>
+              </button>
+            </div>
+          )}
+
           {/* Embedded Live Arrival Map & Secure Start Service OTP Verification Module */}
           <LiveArrivalTracker
             booking={booking}
@@ -168,6 +196,7 @@ export const JobTrackerModal: React.FC<JobTrackerModalProps> = ({
             onUpdateBooking={handleBookingUpdate}
             onCallClick={onCallClick}
             onChatClick={onOpenChat}
+            onFinishService={onFinishService}
           />
 
           {/* Post-Inspection Quote Card (if Mechanic / Appliance or exists) */}

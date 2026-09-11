@@ -100,16 +100,27 @@ export const CategoryGrid: React.FC<CategoryGridProps> = ({
       </div>
 
       {/* Instant Dispatch & Browse Profiles Notice Banner */}
-      <div className="p-2.5 bg-gradient-to-r from-emerald-50 via-teal-50 to-blue-50 border border-emerald-200/90 rounded-xl flex items-center justify-between text-xs text-slate-900 shadow-2xs">
+      <div 
+        onClick={() => onSelectCategory(selectedCategory !== 'all' ? selectedCategory : 'plumber')}
+        className="p-2.5 bg-gradient-to-r from-emerald-50 via-teal-50 to-blue-50 border border-emerald-200/90 rounded-xl flex items-center justify-between text-xs text-slate-900 shadow-2xs cursor-pointer hover:shadow-xs transition-all active:scale-[0.99]"
+      >
         <div className="flex items-center gap-2 min-w-0">
-          <Zap className="w-4 h-4 text-emerald-600 shrink-0" />
+          <Zap className="w-4 h-4 text-emerald-600 shrink-0 animate-pulse" />
           <span className="font-extrabold text-[11px] sm:text-xs truncate">
-            Tap any category below to choose <strong className="text-emerald-800">Instant Dispatch</strong> (2km Fair Rotation) or <strong className="text-blue-800">Browse Profiles</strong>
+            Tap any category below to choose <strong className="text-emerald-800">Instant Dispatch</strong> (1.5km Radius) or <strong className="text-blue-800">Browse Profiles</strong>
           </span>
         </div>
-        <span className="text-[10px] font-black text-blue-900 bg-blue-100 border border-blue-200 px-2 py-0.5 rounded-full shrink-0 ml-2">
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            onSelectCategory(selectedCategory !== 'all' ? selectedCategory : 'plumber');
+          }}
+          className="text-[10px] font-black text-blue-900 bg-blue-100 hover:bg-blue-200 border border-blue-300 px-2.5 py-1 rounded-full shrink-0 ml-2 cursor-pointer shadow-2xs transition-all active:scale-95"
+          title="Open Category Options"
+        >
           ⚡ 2 Options
-        </span>
+        </button>
       </div>
 
       {/* Sub-Category Section Tabs */}
@@ -171,7 +182,7 @@ export const CategoryGrid: React.FC<CategoryGridProps> = ({
               key={cat.id}
               whileHover={{ scale: 1.04, y: -2 }}
               whileTap={{ scale: 0.95 }}
-              onClick={() => onSelectCategory(isSelected ? 'all' : cat.id)}
+              onClick={() => onSelectCategory(cat.id)}
               className={`p-2 sm:p-2.5 rounded-2xl border flex flex-col items-center text-center justify-between transition-all relative shadow-2xs cursor-pointer h-[122px] group ${
                 isSelected
                   ? 'bg-blue-600 text-white border-blue-700 ring-2 ring-blue-500/40 font-bold shadow-md'

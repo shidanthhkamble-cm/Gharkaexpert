@@ -18,7 +18,10 @@ import {
   MessageSquare,
   Compass,
   Zap,
-  Timer
+  Timer,
+  ExternalLink,
+  MapPinOff,
+  User
 } from 'lucide-react';
 import { DirectBooking, WorkerProfile, Language } from '../types';
 import { getCategoryLabel } from '../data/translations';
@@ -30,6 +33,7 @@ interface LiveArrivalTrackerProps {
   onUpdateBooking: (updated: DirectBooking) => void;
   onCallClick: (worker: WorkerProfile) => void;
   onChatClick: (workerId: string) => void;
+  onFinishService?: (booking: DirectBooking) => void;
 }
 
 // Route waypoint coordinates on an SVG canvas (viewBox 0 0 500 280)
@@ -70,6 +74,7 @@ export const LiveArrivalTracker: React.FC<LiveArrivalTrackerProps> = ({
   onUpdateBooking,
   onCallClick,
   onChatClick,
+  onFinishService,
 }) => {
   // Ensure we have a valid 4-digit OTP
   const otp = booking.startServiceOtp || '4829';
@@ -128,7 +133,12 @@ export const LiveArrivalTracker: React.FC<LiveArrivalTrackerProps> = ({
   }, [isSimulating, progress, isStarted]);
 
   // Sync back progress to booking when it changes significantly
+  const isInitialMount = useRef(true);
   useEffect(() => {
+    if (isInitialMount.current) {
+      isInitialMount.current = false;
+      return;
+    }
     if (booking.arrivalProgressPercent !== progress) {
       onUpdateBooking({
         ...booking,
@@ -497,19 +507,36 @@ export const LiveArrivalTracker: React.FC<LiveArrivalTrackerProps> = ({
 
         {/* State A: Job already started with active work timer */}
         {isStarted ? (
-          <div className="p-3 bg-emerald-950/60 border border-emerald-500/40 rounded-xl space-y-2 text-center">
+          <div className="p-3.5 bg-emerald-950/70 border border-emerald-500/50 rounded-2xl space-y-3 text-center shadow-lg">
             <div className="flex items-center justify-center gap-1.5 text-emerald-400">
-              <CheckCircle2 className="w-5 h-5" />
-              <span className="text-xs font-black uppercase tracking-wider">Service Officially Started</span>
+              <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-ping" />
+              <span className="text-xs font-black uppercase tracking-wider">Service In-Progress at Doorstep</span>
             </div>
-            <p className="text-xs text-slate-300">
-              OTP verified with {worker.name} at <strong>{booking.serviceStartedAt || 'Doorstep'}</strong>.
+            <p className="text-xs text-slate-300 leading-relaxed">
+              OTP verified with <strong>{worker.name}</strong> at <strong>{booking.serviceStartedAt || 'Doorstep'}</strong>.
             </p>
-            <div className="inline-flex items-center gap-2 bg-slate-900/90 px-3 py-1.5 rounded-xl border border-emerald-500/30">
+            <div className="inline-flex items-center gap-2 bg-slate-900/90 px-3.5 py-1.5 rounded-xl border border-emerald-500/40 shadow-inner">
               <Timer className="w-4 h-4 text-emerald-400" />
-              <span className="text-xs text-slate-400 font-medium">Session Active:</span>
+              <span className="text-xs text-slate-400 font-medium">Work Session Active:</span>
               <span className="text-sm font-mono font-black text-emerald-300">{formatTimer(elapsedSeconds)}</span>
             </div>
+
+            {/* Customer Finish Service Action */}
+            {onFinishService && (
+              <div className="pt-2 border-t border-emerald-500/30 space-y-1.5">
+                <button
+                  type="button"
+                  onClick={() => onFinishService(booking)}
+                  className="w-full py-3.5 bg-gradient-to-r from-emerald-500 to-teal-400 hover:from-emerald-400 hover:to-teal-300 text-slate-950 font-black rounded-xl text-sm flex items-center justify-center gap-2 shadow-xl transition-all active:scale-95 cursor-pointer"
+                >
+                  <CheckCircle2 className="w-4 h-4 text-slate-950" />
+                  <span>Finish Service (काम पूरा हुआ)</span>
+                </button>
+                <p className="text-[10px] text-slate-400">
+                  The booking stays marked <strong>In-Progress</strong> until you click "Finish Service".
+                </p>
+              </div>
+            )}
           </div>
         ) : (
           /* State B: Customer View or Worker Verification View */
@@ -568,16 +595,17 @@ export const LiveArrivalTracker: React.FC<LiveArrivalTrackerProps> = ({
                 </div>
               </div>
             ) : (
-              /* Worker Enters OTP Mode */
-              <div className="bg-slate-800/90 rounded-xl p-3.5 border border-emerald-500/50 space-y-3">
-                <div className="flex items-center justify-between">
+              /* Worker Enters OTP Mode & Two-Way Location View */
+              <div className="bg-slate-800/90 rounded-2xl p-3.5 border border-emerald-500/50 space-y-3">
+                <div className="flex items-center justify-between border-b border-slate-700/80 pb-2">
                   <div className="flex items-center gap-1.5">
-                    <span className="w-2 h-2 rounded-full bg-emerald-400" />
+                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
                     <span className="text-xs font-black text-emerald-300">
-                      Karigar Terminal: Enter Customer's OTP
+                      Karigar View: Customer Work Location & Navigation
                     </span>
                   </div>
                   <button
+                    type="button"
                     onClick={() => setActiveRolePerspective('customer')}
                     className="text-[10px] text-slate-400 hover:text-white underline cursor-pointer"
                   >
@@ -585,65 +613,143 @@ export const LiveArrivalTracker: React.FC<LiveArrivalTrackerProps> = ({
                   </button>
                 </div>
 
-                <p className="text-[11px] text-slate-300">
-                  Ask the customer for the 4-digit code shown on their GharKaExpert screen to officially begin work.
-                </p>
+                {/* Customer Pickup / Work Location Card */}
+                <div className="p-3 bg-slate-900 rounded-xl border border-slate-700 space-y-2 text-left">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex items-start gap-2 min-w-0">
+                      <MapPin className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
+                      <div className="min-w-0">
+                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                          Customer Work Location
+                        </span>
+                        <p className="text-xs font-extrabold text-white leading-snug">
+                          {booking.address || 'Doorstep Service Address'}
+                        </p>
+                        {booking.notes && (
+                          <p className="text-[11px] text-amber-300/90 mt-0.5">
+                            📍 Landmark / Notes: {booking.notes}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  </div>
 
-                {/* 4-Box Pin Input */}
-                <div className="flex justify-center gap-2.5 py-1">
-                  {[0, 1, 2, 3].map((idx) => (
-                    <input
-                      key={idx}
-                      ref={inputRefs[idx]}
-                      type="text"
-                      maxLength={1}
-                      value={enteredOtp[idx]}
-                      onChange={(e) => handleOtpChange(idx, e.target.value)}
-                      onKeyDown={(e) => handleOtpKeyDown(idx, e)}
-                      className="w-11 h-12 text-center text-xl font-mono font-black bg-slate-950 border-2 border-slate-600 rounded-xl text-white focus:outline-none focus:border-emerald-400 transition-all shadow-inner"
-                    />
-                  ))}
+                  {/* Customer Contact & Masked Telemetry */}
+                  <div className="flex items-center justify-between pt-1 border-t border-slate-800 text-[11px] text-slate-300">
+                    <div className="flex items-center gap-1">
+                      <User className="w-3 h-3 text-slate-400" />
+                      <span className="font-semibold">{booking.customerName || 'Customer'}</span>
+                      <span className="text-[10px] text-slate-500 font-mono">
+                        (Ext #{booking.customerPhone ? booking.customerPhone.slice(-4) : '2819'})
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={() => onCallClick(worker)}
+                        className="p-1 px-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-lg text-[10px] flex items-center gap-1 cursor-pointer"
+                        title="Call Customer"
+                      >
+                        <Phone className="w-3 h-3" />
+                        <span>Call</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => onChatClick(worker.id)}
+                        className="p-1 px-2 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-lg text-[10px] flex items-center gap-1 cursor-pointer"
+                        title="Chat Customer"
+                      >
+                        <MessageSquare className="w-3 h-3" />
+                        <span>Chat</span>
+                      </button>
+                    </div>
+                  </div>
                 </div>
 
-                {/* Error message */}
-                {otpError && (
-                  <div className="p-2 bg-rose-950/60 border border-rose-500/40 rounded-lg text-[10px] text-rose-300 flex items-center gap-1.5">
-                    <AlertCircle className="w-3.5 h-3.5 shrink-0" />
-                    <span>{otpError}</span>
+                {/* Worker Turn-by-Turn Navigation Link */}
+                <div className="p-2.5 bg-emerald-950/50 border border-emerald-500/40 rounded-xl space-y-2">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="font-bold text-emerald-300 flex items-center gap-1">
+                      <Navigation className="w-3.5 h-3.5 text-emerald-400" />
+                      Route Navigation
+                    </span>
+                    <span className="font-mono text-[11px] text-emerald-400 font-black">
+                      {remainingDistanceKm} km • ~{remainingMins} mins
+                    </span>
                   </div>
-                )}
 
-                {/* Success celebration */}
-                {otpSuccess && (
-                  <div className="p-2 bg-emerald-950/80 border border-emerald-500/60 rounded-lg text-xs text-emerald-300 font-bold flex items-center justify-center gap-1.5 animate-bounce">
-                    <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-                    <span>OTP Verified! Service Started Officially.</span>
+                  <a
+                    href={`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(booking.address || 'Doorstep Service Site')}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="w-full py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-black rounded-lg text-xs flex items-center justify-center gap-1.5 shadow-md transition-all active:scale-95 cursor-pointer no-underline"
+                  >
+                    <ExternalLink className="w-3.5 h-3.5" />
+                    <span>Start Turn-by-Turn Navigation</span>
+                  </a>
+                </div>
+
+                <div className="pt-1">
+                  <p className="text-[11px] text-slate-300 mb-1.5">
+                    Once at the customer's doorstep, enter their 4-digit secret code to begin service:
+                  </p>
+
+                  {/* 4-Box Pin Input */}
+                  <div className="flex justify-center gap-2.5 py-1">
+                    {[0, 1, 2, 3].map((idx) => (
+                      <input
+                        key={idx}
+                        ref={inputRefs[idx]}
+                        type="text"
+                        maxLength={1}
+                        value={enteredOtp[idx]}
+                        onChange={(e) => handleOtpChange(idx, e.target.value)}
+                        onKeyDown={(e) => handleOtpKeyDown(idx, e)}
+                        className="w-11 h-12 text-center text-xl font-mono font-black bg-slate-950 border-2 border-slate-600 rounded-xl text-white focus:outline-none focus:border-emerald-400 transition-all shadow-inner"
+                      />
+                    ))}
                   </div>
-                )}
 
-                {/* Action Buttons */}
-                <div className="flex items-center gap-2 pt-1">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      // Quick fill for testing
-                      setEnteredOtp(otp.split(''));
-                      setOtpError(null);
-                    }}
-                    className="px-2.5 py-1.5 bg-slate-900 hover:bg-slate-700 text-slate-300 rounded-lg text-[10px] font-bold border border-slate-700 cursor-pointer"
-                  >
-                    ⚡ Auto-Fill Code ({otp})
-                  </button>
+                  {/* Error message */}
+                  {otpError && (
+                    <div className="p-2 bg-rose-950/60 border border-rose-500/40 rounded-lg text-[10px] text-rose-300 flex items-center gap-1.5 mt-2">
+                      <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                      <span>{otpError}</span>
+                    </div>
+                  )}
 
-                  <button
-                    type="button"
-                    onClick={handleVerifyOtp}
-                    disabled={otpSuccess}
-                    className="flex-1 py-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black rounded-xl text-xs flex items-center justify-center gap-1 shadow-md transition-all active:scale-95 cursor-pointer"
-                  >
-                    <CheckCircle2 className="w-4 h-4" />
-                    <span>Verify Code & Start Job</span>
-                  </button>
+                  {/* Success celebration */}
+                  {otpSuccess && (
+                    <div className="p-2 bg-emerald-950/80 border border-emerald-500/60 rounded-lg text-xs text-emerald-300 font-bold flex items-center justify-center gap-1.5 animate-bounce mt-2">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                      <span>OTP Verified! Service Started Officially.</span>
+                    </div>
+                  )}
+
+                  {/* Action Buttons */}
+                  <div className="flex items-center gap-2 pt-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEnteredOtp(otp.split(''));
+                        setOtpError(null);
+                      }}
+                      className="px-2.5 py-1.5 bg-slate-900 hover:bg-slate-700 text-slate-300 rounded-lg text-[10px] font-bold border border-slate-700 cursor-pointer"
+                    >
+                      ⚡ Auto-Fill Code ({otp})
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={handleVerifyOtp}
+                      disabled={otpSuccess}
+                      className="flex-1 py-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black rounded-xl text-xs flex items-center justify-center gap-1 shadow-md transition-all active:scale-95 cursor-pointer"
+                    >
+                      <CheckCircle2 className="w-4 h-4" />
+                      <span>Verify Code & Start Job</span>
+                    </button>
+                  </div>
                 </div>
               </div>
             )}

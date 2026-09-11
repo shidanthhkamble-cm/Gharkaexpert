@@ -73,7 +73,7 @@ export const WorkerDetailModal: React.FC<WorkerDetailModalProps> = ({
           <div className="flex items-center gap-2">
             <span className="px-3 py-1 bg-slate-950/60 backdrop-blur-md text-emerald-300 border border-emerald-400/30 rounded-full text-xs font-extrabold flex items-center gap-1">
               <BadgeCheck className="w-4 h-4 text-emerald-400" />
-              {worker.aadhaarVerified ? 'Verified Aadhaar KYC' : 'Verified Karigar'}
+              {worker.aadhaarVerified ? 'Basic Verified • Profile Photo Added' : 'Verified Karigar'}
             </span>
             <span className="px-2.5 py-1 bg-amber-500/20 text-amber-300 border border-amber-400/30 rounded-full text-[10px] font-extrabold">
               0% Commission

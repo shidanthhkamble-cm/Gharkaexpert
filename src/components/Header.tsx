@@ -51,7 +51,7 @@ export const Header: React.FC<HeaderProps> = ({
                 PRO
               </span>
             </div>
-            <p className="text-xs text-blue-100 italic font-medium truncate">
+            <p className="text-[11px] sm:text-xs text-blue-100 font-medium truncate tracking-tight">
               {t('tagline', currentLanguage)}
             </p>
           </div>

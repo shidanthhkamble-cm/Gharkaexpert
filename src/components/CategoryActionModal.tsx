@@ -105,11 +105,11 @@ export const CategoryActionModal: React.FC<CategoryActionModalProps> = ({
               <div className="flex items-center justify-between gap-2 mb-2">
                 <div className="flex items-center gap-2">
                   <span className="px-2 py-0.5 bg-emerald-400 text-slate-950 rounded-md text-[10px] font-black tracking-wide uppercase shadow-2xs">
-                    Option 1 • Instant Dispatch
+                    ⚡ Instant Dispatch
                   </span>
                   <span className="text-[10px] font-bold text-emerald-300 flex items-center gap-1">
                     <Radio className="w-3 h-3 text-emerald-400 animate-pulse" />
-                    2km Radius
+                    1.5 km Radius
                   </span>
                 </div>
                 <span className="text-[9px] font-black bg-amber-400/20 text-amber-300 border border-amber-400/40 px-1.5 py-0.5 rounded">
@@ -124,11 +124,11 @@ export const CategoryActionModal: React.FC<CategoryActionModalProps> = ({
                 </div>
                 <div className="flex-1 min-w-0">
                   <h4 className="text-sm sm:text-base font-extrabold text-white flex items-center gap-1.5">
-                    <span>Instant Dispatch</span>
+                    <span>⚡ Instant Dispatch</span>
                     <Sparkles className="w-3.5 h-3.5 text-amber-400" />
                   </h4>
                   <p className="text-xs text-emerald-100/90 leading-relaxed mt-1">
-                    Automatically search and connect with an available worker within a <strong>2km radius</strong> using the <strong>Fair Rotation algorithm</strong> (triggering an Interstitial ad first).
+                    Filter available workers within a strict <strong>1.5 km geo-radius</strong> matching {categoryLabel}. Automatically initiate the masked call connection algorithm to the top nearest matched worker using <strong>Fair Rotation</strong>.
                   </p>
                 </div>
               </div>
@@ -137,11 +137,11 @@ export const CategoryActionModal: React.FC<CategoryActionModalProps> = ({
               <div className="mt-3 pt-2.5 border-t border-emerald-900/60 grid grid-cols-2 gap-1.5 text-[10px] text-emerald-200">
                 <div className="flex items-center gap-1">
                   <Clock className="w-3 h-3 text-emerald-400 shrink-0" />
-                  <span>15-Min Doorstep ETA</span>
+                  <span>10-15 Min Doorstep Arrival</span>
                 </div>
                 <div className="flex items-center gap-1">
                   <MapPin className="w-3 h-3 text-emerald-400 shrink-0" />
-                  <span>Nearby within 2km</span>
+                  <span>Strict 1.5 km Geo-Radius</span>
                 </div>
                 <div className="flex items-center gap-1">
                   <Sparkles className="w-3 h-3 text-emerald-400 shrink-0" />
@@ -149,17 +149,17 @@ export const CategoryActionModal: React.FC<CategoryActionModalProps> = ({
                 </div>
                 <div className="flex items-center gap-1">
                   <ShieldCheck className="w-3 h-3 text-emerald-400 shrink-0" />
-                  <span>Zero Booking Commission</span>
+                  <span>Auto Masked Gateway Call</span>
                 </div>
               </div>
 
               {/* Action Button */}
               <div className="mt-3 pt-2 flex items-center justify-between">
                 <span className="text-[11px] font-bold text-emerald-300">
-                  Tap to launch auto-match
+                  1.5 km Auto-Match & Call
                 </span>
                 <div className="px-3.5 py-1.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black rounded-xl text-xs flex items-center gap-1.5 shadow-sm group-hover:translate-x-0.5 transition-transform">
-                  <span>Start Instant Dispatch</span>
+                  <span>⚡ Instant Dispatch</span>
                   <ArrowRight className="w-3.5 h-3.5" />
                 </div>
               </div>
@@ -176,11 +176,11 @@ export const CategoryActionModal: React.FC<CategoryActionModalProps> = ({
               <div className="flex items-center justify-between gap-2 mb-2">
                 <div className="flex items-center gap-2">
                   <span className="px-2 py-0.5 bg-blue-100 text-blue-800 rounded-md text-[10px] font-black tracking-wide uppercase">
-                    Option 2 • Browse Profiles
+                    🔍 Browse Profiles
                   </span>
                   <span className="text-[10px] font-bold text-slate-500 flex items-center gap-1">
                     <Compass className="w-3 h-3 text-blue-600" />
-                    Manual Browse
+                    Manual Review & Call
                   </span>
                 </div>
                 <span className="text-[9px] font-bold bg-emerald-100 text-emerald-800 px-1.5 py-0.5 rounded-full flex items-center gap-0.5">
@@ -195,10 +195,10 @@ export const CategoryActionModal: React.FC<CategoryActionModalProps> = ({
                 </div>
                 <div className="flex-1 min-w-0">
                   <h4 className="text-sm sm:text-base font-extrabold text-slate-900 flex items-center gap-1.5">
-                    <span>Browse Profiles</span>
+                    <span>🔍 Browse Profiles</span>
                   </h4>
                   <p className="text-xs text-slate-600 leading-relaxed mt-1">
-                    Let the user scroll down to view worker profiles, check details, and call or connect manually.
+                    Scroll down to view individual worker profile cards, check photos, transparent rates, and manually click "Call" or "Chat" on the card.
                   </p>
                 </div>
               </div>
@@ -207,7 +207,7 @@ export const CategoryActionModal: React.FC<CategoryActionModalProps> = ({
               <div className="mt-3 pt-2.5 border-t border-slate-200/80 grid grid-cols-2 gap-1.5 text-[10px] text-slate-600">
                 <div className="flex items-center gap-1">
                   <ShieldCheck className="w-3 h-3 text-blue-600 shrink-0" />
-                  <span>Aadhaar Verified Karigars</span>
+                  <span>Basic Verified • Photo Added</span>
                 </div>
                 <div className="flex items-center gap-1">
                   <ChevronDown className="w-3 h-3 text-blue-600 shrink-0" />
@@ -226,10 +226,10 @@ export const CategoryActionModal: React.FC<CategoryActionModalProps> = ({
               {/* Action Button */}
               <div className="mt-3 pt-2 flex items-center justify-between">
                 <span className="text-[11px] font-bold text-blue-700">
-                  Filter & scroll to worker list
+                  View {categoryLabel} Cards
                 </span>
                 <div className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-extrabold rounded-xl text-xs flex items-center gap-1.5 shadow-2xs group-hover:translate-x-0.5 transition-transform">
-                  <span>Browse {categoryLabel}s</span>
+                  <span>🔍 Browse {categoryLabel} Profiles</span>
                   <ChevronDown className="w-3.5 h-3.5" />
                 </div>
               </div>

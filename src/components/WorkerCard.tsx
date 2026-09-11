@@ -85,10 +85,22 @@ export const WorkerCard: React.FC<WorkerCardProps> = ({
           </div>
 
           <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-1">
+            <div className="flex items-center gap-1.5 flex-wrap">
               <h4 className="text-sm sm:text-base font-extrabold text-slate-900 truncate">
                 {worker.name}
               </h4>
+              {worker.aadhaarVerified && (
+                <span className="text-[10px] bg-emerald-100 text-emerald-800 font-bold px-1.5 py-0.5 rounded-full flex items-center gap-0.5 shrink-0" title="Identity Verified & Profile Photo Added">
+                  <BadgeCheck className="w-3 h-3 text-emerald-600 shrink-0" />
+                  <span>Basic Verified</span>
+                </span>
+              )}
+              {worker.isFlaggedInAdmin && (
+                <span className="text-[10px] bg-rose-100 text-rose-800 font-extrabold px-1.5 py-0.5 rounded-full flex items-center gap-0.5 shrink-0 border border-rose-300" title={`Flagged in Admin: ${worker.flagReason || 'Quality review'}`}>
+                  <ShieldAlert className="w-3 h-3 text-rose-600 shrink-0" />
+                  <span>Under Review</span>
+                </span>
+              )}
             </div>
 
             <div className="flex items-center gap-1.5 mt-0.5">

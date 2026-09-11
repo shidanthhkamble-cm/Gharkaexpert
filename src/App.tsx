@@ -20,10 +20,12 @@ import {
   Navigation,
   Zap,
   Phone,
-  ChevronRight
+  ChevronRight,
+  CheckCircle2,
+  Star
 } from 'lucide-react';
 
-import { Language, UserRole, TradeCategory, WorkerProfile, PortfolioItem, SubContractJob, DirectBooking, Conversation, ChatMessage, PostInspectionQuote } from './types';
+import { Language, UserRole, TradeCategory, WorkerProfile, PortfolioItem, SubContractJob, DirectBooking, Conversation, ChatMessage, PostInspectionQuote, WorkerReview } from './types';
 import { t, getCategoryLabel } from './data/translations';
 import { INITIAL_WORKERS, INITIAL_SUB_CONTRACTS } from './data/initialData';
 import { INITIAL_CONVERSATIONS } from './data/initialChats';
@@ -54,6 +56,7 @@ import { CategoryActionModal } from './components/CategoryActionModal';
 import { PostInspectionQuoteModal } from './components/PostInspectionQuoteModal';
 import { JobTrackerModal } from './components/JobTrackerModal';
 import { WorkerEditModal } from './components/WorkerEditModal';
+import { WorkerRatingModal } from './components/WorkerRatingModal';
 
 export default function App() {
   // Onboarding Step Flow
@@ -122,14 +125,9 @@ export default function App() {
   const [activeChatWorkerId, setActiveChatWorkerId] = useState<string | null>(null);
   const [showInboxModal, setShowInboxModal] = useState(false);
 
-  // GharKaExpert Modal States
-  const [categoryActionModal, setCategoryActionModal] = useState<{
-    isOpen: boolean;
-    category: TradeCategory;
-  }>({
-    isOpen: false,
-    category: 'plumber',
-  });
+  // GharKaExpert Category Action Modal States (isActionModalOpen and modalCategory)
+  const [isActionModalOpen, setIsActionModalOpen] = useState(false);
+  const [modalCategory, setModalCategory] = useState<TradeCategory>('plumber');
   const [showEmergencyDispatch, setShowEmergencyDispatch] = useState(false);
   const [showInterstitialAd, setShowInterstitialAd] = useState(false);
   const [interstitialTitle, setInterstitialTitle] = useState('GharKaExpert Partner Sponsor');
@@ -144,6 +142,8 @@ export default function App() {
 
   const [pendingAdAction, setPendingAdAction] = useState<PendingAdAction | null>(null);
   const [activeTrackerBooking, setActiveTrackerBooking] = useState<DirectBooking | null>(null);
+  const [ratingModalData, setRatingModalData] = useState<{ booking: DirectBooking; worker: WorkerProfile } | null>(null);
+  const [adminAlertMessage, setAdminAlertMessage] = useState<string | null>(null);
 
   // Initialize AdMob on component mount
   useEffect(() => {
@@ -166,28 +166,29 @@ export default function App() {
     setShowInterstitialAd(true);
   };
 
-  // When user clicks a category icon: open popup with exactly two options (Instant Dispatch vs Browse Profiles)
+  // When user clicks ANY skill category icon (Plumbing, Carpentry, Mason, AC, etc.) or '⚡ 2 Options' badge
   const handleCategoryIconClick = (cat: TradeCategory | 'all') => {
     if (cat === 'all') {
       setSelectedCategory('all');
+      setIsActionModalOpen(false);
       return;
     }
-    setCategoryActionModal({
-      isOpen: true,
-      category: cat,
-    });
+    // Strictly update selected category to the actively tapped skill
+    setSelectedCategory(cat);
+    setModalCategory(cat);
+    setIsActionModalOpen(true);
   };
 
   // Option 1: 'Instant Dispatch'
-  // Automatically search and connect with an available worker within a 2km radius using the Fair Rotation algorithm (triggering an Interstitial ad first).
+  // Automatically search and connect with an available worker within a strict 1.5km radius using Fair Rotation algorithm (triggering an Interstitial ad first).
   const handleInstantDispatchFromCategory = (category: TradeCategory) => {
-    setCategoryActionModal(prev => ({ ...prev, isOpen: false }));
+    setIsActionModalOpen(false);
     setSelectedCategory(category);
     const catLabel = getCategoryLabel(category, currentLanguage) || category;
     setPendingAdAction({ type: 'instant_dispatch', category });
     setInterstitialTitle(`Instant Dispatch: ${catLabel} • Google AdMob`);
     setInterstitialSubtitle(
-      `Auto-matching available ${catLabel} within a 2km radius using Fair Rotation algorithm. 15-min arrival with 0% commission.`
+      `Auto-matching available ${catLabel} within a strict 1.5km radius using Fair Rotation algorithm. Auto-initiating masked call with 0% commission.`
     );
     setShowInterstitialAd(true);
   };
@@ -195,7 +196,7 @@ export default function App() {
   // Option 2: 'Browse Profiles'
   // Let the user scroll down to view worker profiles, check details, and call or connect manually.
   const handleBrowseProfilesFromCategory = (category: TradeCategory) => {
-    setCategoryActionModal(prev => ({ ...prev, isOpen: false }));
+    setIsActionModalOpen(false);
     setSelectedCategory(category);
     setActiveTab('workers');
     setTimeout(() => {
@@ -298,12 +299,13 @@ export default function App() {
   );
 
   // Filtered & Fair-Rotated Workers
+  // When a specific category is tapped, do NOT show all skills combined. Strictly filter only the exact skill selected.
   const filteredWorkers = workersList
     .filter((worker) => {
       const matchesCategory =
-        selectedCategory === 'all' ||
-        worker.primaryTrade === selectedCategory ||
-        worker.additionalTrades?.includes(selectedCategory as TradeCategory);
+        selectedCategory === 'all'
+          ? true
+          : worker.primaryTrade === selectedCategory;
       const matchesEmergency = !isEmergencyOnly || worker.isEmergencyAvailable;
       const matchesSearch =
         worker.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -421,15 +423,98 @@ export default function App() {
       createdAt: new Date().toISOString()
     };
 
-    if (activeTrackerBooking) {
-      const updated = { ...activeTrackerBooking, quote: newQuote };
-      setActiveTrackerBooking(updated);
-      setMyBookings(prev => prev.map(b => b.id === updated.id ? updated : b));
+    const targetId = quoteModalState.bookingId || activeTrackerBooking?.id;
+    setMyBookings(prev => prev.map(b => b.id === targetId ? { ...b, quote: newQuote } : b));
+
+    if (activeTrackerBooking && activeTrackerBooking.id === targetId) {
+      setActiveTrackerBooking({ ...activeTrackerBooking, quote: newQuote });
     }
 
     setQuoteModalState({ show: false, mode: 'customer_view', worker: null });
     setInterstitialTitle('Quote Sent - AdMob Partner Sponsor');
     setShowInterstitialAd(true);
+  };
+
+  // Customer "Finish Service" Control & Review Trigger
+  const handleCustomerFinishService = (bookingToFinish: DirectBooking) => {
+    const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const updated: DirectBooking = {
+      ...bookingToFinish,
+      status: 'completed',
+      serviceFinishedAt: timeStr,
+    };
+    setActiveTrackerBooking(null);
+    setMyBookings(prev => prev.map(b => b.id === updated.id ? updated : b));
+
+    const workerObj = workersList.find(w => w.id === updated.workerId) || workersList[0];
+    setRatingModalData({ booking: updated, worker: workerObj });
+  };
+
+  // Submit Worker Review (1 to 5 stars, behavior tags, and admin flagging)
+  const handleSubmitWorkerReview = ({
+    stars,
+    tags,
+    comment,
+    isFlagged,
+    flagReason,
+  }: {
+    stars: number;
+    tags: string[];
+    comment: string;
+    isFlagged: boolean;
+    flagReason?: string;
+  }) => {
+    if (!ratingModalData) return;
+    const { booking, worker } = ratingModalData;
+
+    const newReview: WorkerReview = {
+      id: `rev-${Date.now()}`,
+      bookingId: booking.id,
+      workerId: worker.id,
+      workerName: worker.name,
+      customerName: booking.customerName || userProfile.name,
+      stars,
+      tags,
+      comment,
+      isFlaggedForAdminReview: isFlagged,
+      createdAt: new Date().toISOString(),
+    };
+
+    // Calculate score
+    const newRating = isFlagged || stars <= 2
+      ? Math.max(1.0, +((worker.rating * worker.reviewsCount + stars) / (worker.reviewsCount + 1) - 0.4).toFixed(1))
+      : +((worker.rating * worker.reviewsCount + stars) / (worker.reviewsCount + 1)).toFixed(1);
+
+    // Update worker profile with new rating and Admin flag if applicable
+    setWorkersList(prev => prev.map(w => {
+      if (w.id === worker.id) {
+        return {
+          ...w,
+          rating: newRating,
+          reviewsCount: w.reviewsCount + 1,
+          completedJobs: w.completedJobs + 1,
+          isFlaggedInAdmin: isFlagged ? true : w.isFlaggedInAdmin,
+          flagReason: isFlagged ? flagReason : w.flagReason,
+          adminFlaggedAt: isFlagged ? new Date().toLocaleString() : w.adminFlaggedAt,
+        };
+      }
+      return w;
+    }));
+
+    // Update booking object with completed review
+    const updatedBooking: DirectBooking = {
+      ...booking,
+      status: 'completed',
+      rating: stars,
+      review: newReview,
+    };
+    setMyBookings(prev => prev.map(b => b.id === updatedBooking.id ? updatedBooking : b));
+
+    if (isFlagged) {
+      setAdminAlertMessage(`⚠️ Admin Quality Alert: Karigar ${worker.name} flagged for review (${flagReason || 'Low Rating / Behavior'}). Immediate investigation logged.`);
+    }
+
+    setRatingModalData(null);
   };
 
   return (
@@ -549,10 +634,7 @@ export default function App() {
               <CategoryGrid
                 selectedCategory={selectedCategory}
                 onSelectCategory={(cat) => {
-                  setSelectedCategory(cat);
-                  if (cat !== 'all') {
-                    handleInitiateInstantDispatch(cat);
-                  }
+                  handleCategoryIconClick(cat);
                 }}
                 currentLanguage={currentLanguage}
               />
@@ -664,6 +746,38 @@ export default function App() {
               {/* TAB 1: WORKERS LIST WITH NATIVE ADMOB CARD */}
               {activeTab === 'workers' && (
                 <div id="karigar-profiles-list" className="space-y-3">
+                  {/* Sub-Contract & Co-Worker Dispatch Option for Main Contractors / Raj Mestris */}
+                  <div className="bg-gradient-to-r from-amber-500/10 via-orange-500/10 to-amber-600/10 border border-amber-300/90 rounded-2xl p-3 sm:p-3.5 shadow-2xs flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <div className="w-10 h-10 rounded-xl bg-amber-500 text-slate-950 flex items-center justify-center font-black shrink-0 shadow-xs">
+                        <Building2 className="w-5 h-5" />
+                      </div>
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="text-[9px] font-black uppercase tracking-wider bg-amber-200 text-amber-950 px-2 py-0.5 rounded-full">
+                            Raj Mestri & Contractor Hub
+                          </span>
+                          <span className="text-xs font-black text-amber-950">
+                            Sub-Contract / Co-Worker Dispatch
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-slate-700 mt-0.5 font-medium">
+                          Assign excess work or subcontract tasks to verified laborers, plumbers, carpenters & helpers within the network.
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 self-start sm:self-center shrink-0">
+                      <button
+                        onClick={() => setActiveTab('passwork')}
+                        className="px-3.5 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-black rounded-xl text-xs flex items-center gap-1.5 transition-all shadow-xs active:scale-95 cursor-pointer"
+                      >
+                        <Plus className="w-3.5 h-3.5 stroke-[3]" />
+                        <span>Sub-Contract Tasks ({subContractJobs.length})</span>
+                      </button>
+                    </div>
+                  </div>
+
                   {/* Verified Karigars & Direct Connect Header */}
                   <div className="bg-white border border-slate-200 rounded-2xl p-3 sm:p-3.5 shadow-2xs flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                     <div className="flex items-center gap-2.5">
@@ -855,31 +969,66 @@ export default function App() {
                             </div>
                           )}
                           <div className="flex items-center justify-between pt-1">
-                            <button
-                              onClick={() => setActiveTrackerBooking(b)}
-                              className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-xs flex items-center gap-1.5 shadow-2xs cursor-pointer"
-                            >
-                              <Navigation className="w-3.5 h-3.5" />
-                              <span>Live GPS Map & Start OTP</span>
-                            </button>
-
-                            {(b.trade.includes('mechanic') || b.trade.includes('ac')) && (
+                            <div className="flex items-center gap-1.5 flex-wrap">
                               <button
-                                onClick={() => {
-                                  const workerObj = workersList.find(w => w.id === b.workerId) || workersList[0];
-                                  setQuoteModalState({
-                                    show: true,
-                                    mode: currentRole === 'worker' ? 'worker_create' : 'customer_view',
-                                    worker: workerObj,
-                                    bookingId: b.id
-                                  });
-                                }}
-                                className="px-3 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold rounded-xl text-xs flex items-center gap-1 shadow-2xs"
+                                onClick={() => setActiveTrackerBooking(b)}
+                                className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-xs flex items-center gap-1.5 shadow-2xs cursor-pointer"
                               >
-                                <DollarSign className="w-3.5 h-3.5" />
-                                <span>{currentRole === 'worker' ? 'Send Estimate' : 'View Estimate'}</span>
+                                <Navigation className="w-3.5 h-3.5" />
+                                <span>{b.status === 'completed' ? 'View Route History' : 'Live GPS Map & Start OTP'}</span>
                               </button>
-                            )}
+
+                              {b.status === 'work_started' && (
+                                <button
+                                  onClick={() => handleCustomerFinishService(b)}
+                                  className="px-3 py-1.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black rounded-xl text-xs flex items-center gap-1 shadow-xs cursor-pointer"
+                                >
+                                  <CheckCircle2 className="w-3.5 h-3.5" />
+                                  <span>Finish Service</span>
+                                </button>
+                              )}
+
+                              {b.status === 'completed' && (
+                                b.review ? (
+                                  <div className="flex items-center gap-1 text-[11px] text-amber-700 font-bold bg-amber-50 px-2.5 py-1 rounded-xl border border-amber-200">
+                                    <Star className="w-3 h-3 fill-amber-400 text-amber-400" />
+                                    <span>Rated {b.rating}/5</span>
+                                    {b.review.isFlaggedForAdminReview && (
+                                      <span className="text-rose-600 font-extrabold ml-1">• Flagged</span>
+                                    )}
+                                  </div>
+                                ) : (
+                                  <button
+                                    onClick={() => {
+                                      const workerObj = workersList.find(w => w.id === b.workerId) || workersList[0];
+                                      setRatingModalData({ booking: b, worker: workerObj });
+                                    }}
+                                    className="px-3 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold rounded-xl text-xs flex items-center gap-1 shadow-2xs cursor-pointer"
+                                  >
+                                    <Star className="w-3.5 h-3.5 fill-slate-950" />
+                                    <span>Rate Karigar</span>
+                                  </button>
+                                )
+                              )}
+
+                              {(b.trade.includes('mechanic') || b.trade.includes('ac')) && (
+                                <button
+                                  onClick={() => {
+                                    const workerObj = workersList.find(w => w.id === b.workerId) || workersList[0];
+                                    setQuoteModalState({
+                                      show: true,
+                                      mode: currentRole === 'worker' ? 'worker_create' : 'customer_view',
+                                      worker: workerObj,
+                                      bookingId: b.id
+                                    });
+                                  }}
+                                  className="px-3 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold rounded-xl text-xs flex items-center gap-1 shadow-2xs"
+                                >
+                                  <DollarSign className="w-3.5 h-3.5" />
+                                  <span>{currentRole === 'worker' ? 'Send Estimate' : 'View Estimate'}</span>
+                                </button>
+                              )}
+                            </div>
                           </div>
                         </div>
                       ))}
@@ -927,6 +1076,18 @@ export default function App() {
               />
             )}
 
+            {/* Category Action Modal: 2 Options (Instant Dispatch vs Browse Profiles) */}
+            {isActionModalOpen && (
+              <CategoryActionModal
+                isOpen={isActionModalOpen}
+                category={modalCategory}
+                currentLanguage={currentLanguage}
+                onInstantDispatch={(category) => handleInstantDispatchFromCategory(category)}
+                onBrowseProfiles={(category) => handleBrowseProfilesFromCategory(category)}
+                onClose={() => setIsActionModalOpen(false)}
+              />
+            )}
+
             {showEmergencyDispatch && (
               <EmergencyDispatchModal
                 category={selectedCategory !== 'all' ? selectedCategory : 'mason'}
@@ -967,6 +1128,9 @@ export default function App() {
                     setActiveTrackerBooking(updated);
                     setMyBookings(prev => prev.map(b => b.id === updated.id ? updated : b));
                   }}
+                  onFinishService={(bookingToFinish) => {
+                    handleCustomerFinishService(bookingToFinish);
+                  }}
                   onClose={() => setActiveTrackerBooking(null)}
                 />
               );
@@ -977,28 +1141,47 @@ export default function App() {
                 mode={quoteModalState.mode}
                 worker={quoteModalState.worker}
                 bookingId={quoteModalState.bookingId}
-                quote={activeTrackerBooking?.quote}
+                quote={quoteModalState.bookingId ? (myBookings.find(b => b.id === quoteModalState.bookingId)?.quote || activeTrackerBooking?.quote) : activeTrackerBooking?.quote}
                 onSendQuote={handleSendQuote}
                 onApproveQuote={() => {
+                  const targetBookingId = quoteModalState.bookingId || activeTrackerBooking?.id;
+                  setMyBookings(prev => prev.map(b => {
+                    if (b.id === targetBookingId && b.quote) {
+                      return {
+                        ...b,
+                        quote: { ...b.quote, status: 'approved' as const },
+                        status: 'work_started' as const,
+                        serviceStartedAt: b.serviceStartedAt || new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                      };
+                    }
+                    return b;
+                  }));
                   if (activeTrackerBooking && activeTrackerBooking.quote) {
-                    const updated = {
+                    setActiveTrackerBooking({
                       ...activeTrackerBooking,
                       quote: { ...activeTrackerBooking.quote, status: 'approved' as const },
-                      status: 'work_started' as const
-                    };
-                    setActiveTrackerBooking(updated);
-                    setMyBookings(prev => prev.map(b => b.id === updated.id ? updated : b));
+                      status: 'work_started' as const,
+                      serviceStartedAt: activeTrackerBooking.serviceStartedAt || new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                    });
                   }
                   setQuoteModalState({ show: false, mode: 'customer_view', worker: null });
                 }}
                 onRejectQuote={() => {
+                  const targetBookingId = quoteModalState.bookingId || activeTrackerBooking?.id;
+                  setMyBookings(prev => prev.map(b => {
+                    if (b.id === targetBookingId && b.quote) {
+                      return {
+                        ...b,
+                        quote: { ...b.quote, status: 'rejected' as const }
+                      };
+                    }
+                    return b;
+                  }));
                   if (activeTrackerBooking && activeTrackerBooking.quote) {
-                    const updated = {
+                    setActiveTrackerBooking({
                       ...activeTrackerBooking,
                       quote: { ...activeTrackerBooking.quote, status: 'rejected' as const }
-                    };
-                    setActiveTrackerBooking(updated);
-                    setMyBookings(prev => prev.map(b => b.id === updated.id ? updated : b));
+                    });
                   }
                   setQuoteModalState({ show: false, mode: 'customer_view', worker: null });
                 }}
@@ -1131,6 +1314,41 @@ export default function App() {
                 onClose={() => setBookingWorker(null)}
                 onConfirmBooking={handleConfirmBooking}
               />
+            )}
+
+            {/* PERFORMANCE & BEHAVIOR RATING MODAL */}
+            {ratingModalData && (
+              <WorkerRatingModal
+                booking={ratingModalData.booking}
+                worker={ratingModalData.worker}
+                currentLanguage={currentLanguage}
+                onSubmitReview={handleSubmitWorkerReview}
+                onSubmit={handleSubmitWorkerReview}
+                onClose={() => setRatingModalData(null)}
+              />
+            )}
+
+            {/* REAL-TIME ADMIN FLAGGING QUALITY ALERT BANNER */}
+            {adminAlertMessage && (
+              <div className="fixed top-14 left-4 right-4 z-50 p-3.5 bg-rose-950/95 text-white border border-rose-500/80 rounded-2xl shadow-2xl flex items-start justify-between gap-2 backdrop-blur-md animate-in fade-in slide-in-from-top-3 duration-200">
+                <div className="flex items-start gap-2.5">
+                  <ShieldAlert className="w-5 h-5 text-rose-400 shrink-0 mt-0.5" />
+                  <div>
+                    <span className="text-[10px] font-black uppercase tracking-wider block text-rose-300">
+                      GharKaExpert Safety & Quality Control
+                    </span>
+                    <p className="text-xs text-rose-100 font-semibold leading-snug mt-0.5">
+                      {adminAlertMessage}
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setAdminAlertMessage(null)}
+                  className="text-rose-300 hover:text-white text-xs font-bold px-2 py-1 bg-rose-900/60 rounded-lg shrink-0 cursor-pointer"
+                >
+                  Dismiss
+                </button>
+              </div>
             )}
           </div>
         )}

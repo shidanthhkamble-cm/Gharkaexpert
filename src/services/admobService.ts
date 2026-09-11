@@ -57,16 +57,26 @@ class AdMobService {
         script.src = 'https://securepubads.g.doubleclick.net/tag/js/gpt.js';
         script.async = true;
         script.crossOrigin = 'anonymous';
+        script.onerror = () => {
+          // Gracefully handle ad-blocker or offline sandbox environments
+          console.info('[AdMob SDK] Ad network script blocked or offline; falling back gracefully.');
+        };
         document.head.appendChild(script);
       }
 
       window.googletag.cmd.push(() => {
-        if (window.googletag?.pubads) {
-          const pubads = window.googletag.pubads();
-          pubads.enableSingleRequest?.();
-          pubads.collapseEmptyDivs?.();
+        try {
+          if (window.googletag && typeof window.googletag.pubads === 'function') {
+            const pubads = window.googletag.pubads();
+            pubads?.enableSingleRequest?.();
+            pubads?.collapseEmptyDivs?.();
+          }
+          if (window.googletag && typeof window.googletag.enableServices === 'function') {
+            window.googletag.enableServices();
+          }
+        } catch {
+          // Fallback gracefully if ad scripts are suppressed
         }
-        window.googletag?.enableServices?.();
       });
 
       this.isInitialized = true;
