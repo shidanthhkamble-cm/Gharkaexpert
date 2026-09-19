@@ -338,9 +338,54 @@ export default function App() {
     phone: string;
     photoUrl: string;
     verified: boolean;
+    role: UserRole;
+    trade?: TradeCategory;
+    experienceYears?: number;
+    pincode?: string;
+    aadhaarVerified?: boolean;
+    aadhaarFrontUrl?: string;
+    aadhaarBackUrl?: string;
   }) => {
-    setUserProfile(data);
-    setOnboardingStep('role');
+    setUserProfile({
+      name: data.name,
+      phone: data.phone,
+      photoUrl: data.photoUrl,
+      verified: data.verified,
+    });
+    setCurrentRole(data.role);
+
+    if (data.role === 'worker') {
+      const newWorker: WorkerProfile = {
+        id: `worker-my-${Date.now()}`,
+        name: data.name,
+        phone: data.phone,
+        aadhaarVerified: true,
+        aadhaarNumberMasked: '•••• •••• ' + data.phone.slice(-4),
+        photoUrl: data.photoUrl,
+        role: 'worker',
+        primaryTrade: data.trade || 'electrician',
+        pricingType: 'daily',
+        dailyRate: 750,
+        visitingFee: 299,
+        rating: 5.0,
+        reviewsCount: 1,
+        experienceYears: data.experienceYears || 5,
+        city: data.pincode ? `Area Pincode ${data.pincode}` : 'Mumbai',
+        distanceKm: 0.5,
+        isEmergencyAvailable: true,
+        isAvailableToday: true,
+        bio: `Verified Karigar specializing in ${data.trade || 'repair'} work with ${data.experienceYears || 5} years experience. Pincode ${data.pincode || '400001'}.`,
+        languagesSpoken: ['Hindi', 'English'],
+        portfolio: [],
+        completedJobs: 0,
+        recentBookingCount: 0,
+        isNewKarigar: true,
+      };
+      setWorkersList(prev => [newWorker, ...prev.filter(w => w.id !== newWorker.id)]);
+    }
+
+    // Direct navigation to home screen upon OTP verification for customers or KYC completion for workers
+    setOnboardingStep('home');
   };
   const handleRoleProceed = () => setOnboardingStep('home');
 
