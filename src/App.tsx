@@ -22,7 +22,10 @@ import {
   Phone,
   ChevronRight,
   CheckCircle2,
-  Star
+  Star,
+  Clock,
+  MapPin,
+  History
 } from 'lucide-react';
 
 import { Language, UserRole, TradeCategory, WorkerProfile, PortfolioItem, SubContractJob, DirectBooking, Conversation, ChatMessage, PostInspectionQuote, WorkerReview } from './types';
@@ -57,6 +60,8 @@ import { PostInspectionQuoteModal } from './components/PostInspectionQuoteModal'
 import { JobTrackerModal } from './components/JobTrackerModal';
 import { WorkerEditModal } from './components/WorkerEditModal';
 import { WorkerRatingModal } from './components/WorkerRatingModal';
+import { ServiceHistoryView } from './components/ServiceHistoryView';
+import { BottomNavBar } from './components/BottomNavBar';
 
 export default function App() {
   // Onboarding Step Flow
@@ -103,14 +108,110 @@ export default function App() {
       bookingDate: 'Today (Live GPS)',
       timeSlot: 'En Route (8 Mins)',
       address: 'Flat 402, Sunshine Heights, Mumbai',
+      pinnedLat: 19.1363,
+      pinnedLng: 72.8277,
       isEmergency: false,
       notes: 'Bathroom tile setting & masonry repair',
       status: 'in_transit',
       startServiceOtp: '7419',
+      startWorkCode: '7419',
       otpVerified: false,
       arrivalProgressPercent: 45,
       estimatedArrivalMins: 8,
+      currentDistanceKm: 1.8,
+      totalPaidAmount: 950,
+      invoiceNumber: 'GKE-INV-841920',
       createdAt: new Date().toISOString()
+    },
+    {
+      id: 'booking-hist-2',
+      customerName: 'Customer',
+      customerPhone: '+91 98765 43210',
+      workerId: 'w-2',
+      workerName: 'Mukesh Carpenter',
+      trade: 'carpenter',
+      bookingDate: 'Yesterday, 18 Sep',
+      timeSlot: '11:00 AM - 01:00 PM',
+      address: 'Shop 12, Linking Road, Bandra West, Mumbai',
+      pinnedLat: 19.0600,
+      pinnedLng: 72.8340,
+      isEmergency: false,
+      notes: 'Modular kitchen cabinet hinge repair & plywood fitting',
+      status: 'completed',
+      startServiceOtp: '3821',
+      startWorkCode: '3821',
+      otpVerified: true,
+      serviceStartedAt: '11:15 AM',
+      serviceFinishedAt: '12:45 PM',
+      completedAtDate: '18 Sep 2026',
+      totalPaidAmount: 850,
+      invoiceNumber: 'GKE-INV-719342',
+      rating: 5,
+      review: {
+        bookingId: 'booking-hist-2',
+        workerId: 'w-2',
+        workerName: 'Mukesh Carpenter',
+        customerName: 'Customer',
+        stars: 5,
+        tags: ['Arrived on Time', 'Professional & Polite', 'High Quality Work'],
+        comment: 'Clean woodwork and fixed our cabinet flawlessly. Very respectful.',
+        createdAt: '2026-09-18T13:00:00Z'
+      },
+      createdAt: '2026-09-18T10:00:00Z'
+    },
+    {
+      id: 'booking-hist-3',
+      customerName: 'Customer',
+      customerPhone: '+91 98765 43210',
+      workerId: 'w-3',
+      workerName: 'Sanjay Plumber',
+      trade: 'plumber',
+      bookingDate: '15 Sep 2026',
+      timeSlot: '04:00 PM - 05:30 PM',
+      address: 'B-204, Green Acres, Andheri East, Mumbai',
+      pinnedLat: 19.1197,
+      pinnedLng: 72.8464,
+      isEmergency: true,
+      notes: 'Emergency pipeline leakage under kitchen sink',
+      status: 'completed',
+      startServiceOtp: '6194',
+      startWorkCode: '6194',
+      otpVerified: true,
+      serviceStartedAt: '04:10 PM',
+      serviceFinishedAt: '05:05 PM',
+      completedAtDate: '15 Sep 2026',
+      totalPaidAmount: 700,
+      invoiceNumber: 'GKE-INV-612089',
+      rating: 5,
+      review: {
+        bookingId: 'booking-hist-3',
+        workerId: 'w-3',
+        workerName: 'Sanjay Plumber',
+        customerName: 'Customer',
+        stars: 5,
+        tags: ['Arrived on Time', '0% Brokerage Honest Pricing'],
+        comment: 'Rapid emergency response. Replaced worn valve within 45 mins.',
+        createdAt: '2026-09-15T17:15:00Z'
+      },
+      createdAt: '2026-09-15T15:30:00Z'
+    },
+    {
+      id: 'booking-hist-4',
+      customerName: 'Customer',
+      customerPhone: '+91 98765 43210',
+      workerId: 'w-4',
+      workerName: 'Sunil Electrician',
+      trade: 'electrician',
+      bookingDate: '12 Sep 2026',
+      timeSlot: '02:00 PM - 03:00 PM',
+      address: 'Plot 88, Juhu Tara Road, Mumbai',
+      isEmergency: false,
+      notes: 'Main distribution board circuit breaker tripping inspection',
+      status: 'cancelled',
+      cancellationReason: 'Customer resolved issue independently by resetting main MCB switch.',
+      totalPaidAmount: 0,
+      invoiceNumber: 'GKE-CAN-419082',
+      createdAt: '2026-09-12T13:00:00Z'
     }
   ]);
   const [conversations, setConversations] = useState<Conversation[]>(INITIAL_CONVERSATIONS);
@@ -411,12 +512,15 @@ export default function App() {
 
   // Direct Booking Confirm
   const handleConfirmBooking = (newBooking: DirectBooking) => {
+    const code = newBooking.startWorkCode || newBooking.startServiceOtp || Math.floor(1000 + Math.random() * 9000).toString();
     const bookingWithOtp: DirectBooking = {
       ...newBooking,
-      startServiceOtp: newBooking.startServiceOtp || Math.floor(1000 + Math.random() * 9000).toString(),
+      startServiceOtp: code,
+      startWorkCode: code,
       otpVerified: false,
       arrivalProgressPercent: newBooking.arrivalProgressPercent ?? 20,
       estimatedArrivalMins: newBooking.estimatedArrivalMins ?? 12,
+      currentDistanceKm: newBooking.currentDistanceKm ?? 2.4,
     };
     setMyBookings((prev) => [bookingWithOtp, ...prev]);
     setPendingAdAction({ type: 'booking_tracker', booking: bookingWithOtp });
@@ -428,6 +532,7 @@ export default function App() {
   // Worker Emergency Match Acceptance
   const handleEmergencyWorkerAccepted = (worker: WorkerProfile) => {
     setShowEmergencyDispatch(false);
+    const code = Math.floor(1000 + Math.random() * 9000).toString();
     const emergencyBooking: DirectBooking = {
       id: `booking-${Date.now()}`,
       customerName: userProfile.name,
@@ -438,13 +543,17 @@ export default function App() {
       bookingDate: 'Today (Instant Dispatch)',
       timeSlot: 'Live GPS (15 Mins)',
       address: 'Current Live GPS Location (Doorstep)',
+      pinnedLat: 19.1363,
+      pinnedLng: 72.8277,
       isEmergency: true,
       notes: 'Instant Direct Connect Dispatch',
       status: 'in_transit',
-      startServiceOtp: Math.floor(1000 + Math.random() * 9000).toString(),
+      startServiceOtp: code,
+      startWorkCode: code,
       otpVerified: false,
       arrivalProgressPercent: 25,
       estimatedArrivalMins: 11,
+      currentDistanceKm: 1.5,
       createdAt: new Date().toISOString()
     };
     setMyBookings((prev) => [emergencyBooking, ...prev]);
@@ -716,26 +825,94 @@ export default function App() {
                 </div>
               </div>
 
-              {/* Active Tracker Bar (if active booking exists) */}
-              {activeTrackerBooking && (
-                <div className="p-3 bg-slate-900 border border-emerald-500/50 rounded-2xl text-white flex items-center justify-between shadow-md">
-                  <div className="flex items-center gap-2.5">
-                    <div className="w-3 h-3 bg-emerald-400 rounded-full animate-ping" />
-                    <div>
-                      <p className="text-xs font-bold text-emerald-300">Active Job: {activeTrackerBooking.workerName}</p>
-                      <p className="text-[10px] text-slate-300">Status: {activeTrackerBooking.status.toUpperCase()}</p>
+              {/* Active Tracker Bar (if active booking exists or any in_transit / accepted booking) */}
+              {(() => {
+                const activeJob = activeTrackerBooking || myBookings.find(b => b.status === 'in_transit' || b.status === 'accepted' || b.status === 'work_started');
+                if (!activeJob) return null;
+
+                const workerObj = workersList.find(w => w.id === activeJob.workerId);
+                const distanceVal = activeJob.currentDistanceKm ?? (activeJob.status === 'work_started' ? 0.0 : 1.8);
+                const etaMins = activeJob.estimatedArrivalMins ?? (activeJob.status === 'work_started' ? 0 : 8);
+                const code = activeJob.startWorkCode || activeJob.startServiceOtp;
+
+                return (
+                  <div className="p-3.5 bg-gradient-to-r from-slate-900 via-slate-850 to-slate-900 border-2 border-emerald-500/80 rounded-2xl text-white shadow-xl space-y-2.5">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <div className="relative">
+                          <div className="w-3 h-3 bg-emerald-400 rounded-full animate-ping absolute -inset-0.5" />
+                          <div className="w-3 h-3 bg-emerald-400 rounded-full relative z-10" />
+                        </div>
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="text-[10px] font-black uppercase tracking-wider bg-emerald-500/20 text-emerald-300 px-2 py-0.5 rounded-full border border-emerald-500/30">
+                              {activeJob.status === 'work_started' ? '🛠️ WORK IN PROGRESS' : '🛵 LIVE WORKER EN ROUTE'}
+                            </span>
+                            <span className="text-xs font-black text-white truncate">
+                              {activeJob.workerName}
+                            </span>
+                          </div>
+                          <p className="text-[11px] text-slate-300 mt-0.5">
+                            {activeJob.trade.toUpperCase()} • {activeJob.address}
+                          </p>
+                        </div>
+                      </div>
+
+                      {code && (
+                        <div className="text-right shrink-0 bg-amber-400/10 border border-amber-400/40 rounded-xl px-2.5 py-1">
+                          <span className="text-[9px] font-bold text-amber-300 uppercase tracking-wider block">
+                            Start Work Code
+                          </span>
+                          <span className="text-sm font-black font-mono text-amber-400 tracking-wider">
+                            {code}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Telemetry row: Worker Distance, ETA, and Actions */}
+                    <div className="flex items-center justify-between pt-2 border-t border-slate-800 text-xs gap-2 flex-wrap">
+                      <div className="flex items-center gap-3">
+                        <div className="flex items-center gap-1 text-slate-300">
+                          <Navigation className="w-3.5 h-3.5 text-emerald-400" />
+                          <span className="text-[11px]">Distance:</span>
+                          <strong className="text-emerald-300 font-mono text-xs">
+                            {activeJob.status === 'work_started' ? 'At Site (0.0 km)' : `${distanceVal} km`}
+                          </strong>
+                        </div>
+
+                        <div className="flex items-center gap-1 text-slate-300">
+                          <Clock className="w-3.5 h-3.5 text-blue-400" />
+                          <span className="text-[11px]">ETA:</span>
+                          <strong className="text-blue-300 font-mono text-xs">
+                            {activeJob.status === 'work_started' ? 'Arrived' : `~${etaMins} mins`}
+                          </strong>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        {workerObj && (
+                          <button
+                            onClick={() => handleInitiateContact(workerObj, 'call')}
+                            className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold rounded-xl text-xs shadow-xs flex items-center gap-1.5 cursor-pointer active:scale-95 transition-all"
+                          >
+                            <Phone className="w-3.5 h-3.5" />
+                            <span>Call Worker</span>
+                          </button>
+                        )}
+
+                        <button
+                          onClick={() => setActiveTrackerBooking(activeJob)}
+                          className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white font-extrabold rounded-xl text-xs shadow-xs flex items-center gap-1 cursor-pointer active:scale-95 transition-all"
+                        >
+                          <Navigation className="w-3.5 h-3.5" />
+                          <span>Track Live Map</span>
+                        </button>
+                      </div>
                     </div>
                   </div>
-
-                  <button
-                    onClick={() => setActiveTrackerBooking(activeTrackerBooking)}
-                    className="px-3 py-1.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-extrabold rounded-xl text-xs shadow-xs flex items-center gap-1"
-                  >
-                    <Navigation className="w-3.5 h-3.5" />
-                    <span>Track Live</span>
-                  </button>
-                </div>
-              )}
+                );
+              })()}
 
               {/* Main Content Tabs */}
               <div className="flex border-b border-slate-200 font-bold text-xs text-slate-500 overflow-x-auto custom-scrollbar">
@@ -783,8 +960,8 @@ export default function App() {
                       : 'border-transparent hover:text-slate-800'
                   }`}
                 >
-                  <CalendarCheck className="w-4 h-4" />
-                  <span>My Bookings ({myBookings.length})</span>
+                  <History className="w-4 h-4" />
+                  <span>{currentRole === 'worker' ? 'Job History' : 'Bookings & History'} ({myBookings.length})</span>
                 </button>
               </div>
 
@@ -962,135 +1139,37 @@ export default function App() {
                 />
               )}
 
-              {/* TAB 4: MY BOOKINGS & JOB TRACKER */}
+              {/* TAB 4: SERVICE HISTORY & BOOKINGS */}
               {activeTab === 'bookings' && (
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <h3 className="text-sm font-extrabold text-slate-900">
-                      Your Active Bookings & Requests
-                    </h3>
-                  </div>
-
-                  {myBookings.length > 0 ? (
-                    <div className="space-y-2.5">
-                      {myBookings.map((b) => (
-                        <div
-                          key={b.id}
-                          className="p-3.5 bg-white border border-slate-200 rounded-2xl space-y-2 shadow-2xs"
-                        >
-                          <div className="flex items-center justify-between">
-                            <span className="font-extrabold text-slate-900 text-xs">
-                              {b.workerName} ({b.trade.toUpperCase()})
-                            </span>
-                            <div className="flex items-center gap-1.5">
-                              {b.startServiceOtp && (
-                                <span className="px-2 py-0.5 bg-amber-50 text-amber-900 border border-amber-300 rounded-md text-[10px] font-mono font-bold flex items-center gap-1">
-                                  <span>OTP:</span>
-                                  <span className="text-amber-700 font-black">{b.startServiceOtp}</span>
-                                </span>
-                              )}
-                              <span className={`px-2 py-0.5 rounded-md text-[10px] font-extrabold ${
-                                b.status === 'work_started'
-                                  ? 'bg-blue-100 text-blue-800'
-                                  : b.status === 'in_transit'
-                                  ? 'bg-amber-100 text-amber-800 animate-pulse'
-                                  : 'bg-emerald-100 text-emerald-800'
-                              }`}>
-                                {b.status === 'in_transit' ? '🛵 IN TRANSIT' : b.status.toUpperCase()}
-                              </span>
-                            </div>
-                          </div>
-                          <p className="text-xs text-slate-600">
-                            <strong>Date & Slot:</strong> {b.bookingDate} ({b.timeSlot})
-                          </p>
-                          {b.status === 'in_transit' && (
-                            <div className="p-2 bg-slate-50 border border-slate-200 rounded-xl flex items-center justify-between text-xs">
-                              <span className="text-slate-600 text-[11px] flex items-center gap-1">
-                                🛵 <strong>Live Tracking Active:</strong> Path to site
-                              </span>
-                              <span className="text-emerald-700 font-extrabold text-[11px]">
-                                {b.arrivalProgressPercent ? `${b.arrivalProgressPercent}% completed` : 'En Route'}
-                              </span>
-                            </div>
-                          )}
-                          <div className="flex items-center justify-between pt-1">
-                            <div className="flex items-center gap-1.5 flex-wrap">
-                              <button
-                                onClick={() => setActiveTrackerBooking(b)}
-                                className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-xs flex items-center gap-1.5 shadow-2xs cursor-pointer"
-                              >
-                                <Navigation className="w-3.5 h-3.5" />
-                                <span>{b.status === 'completed' ? 'View Route History' : 'Live GPS Map & Start OTP'}</span>
-                              </button>
-
-                              {b.status === 'work_started' && (
-                                <button
-                                  onClick={() => handleCustomerFinishService(b)}
-                                  className="px-3 py-1.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black rounded-xl text-xs flex items-center gap-1 shadow-xs cursor-pointer"
-                                >
-                                  <CheckCircle2 className="w-3.5 h-3.5" />
-                                  <span>Finish Service</span>
-                                </button>
-                              )}
-
-                              {b.status === 'completed' && (
-                                b.review ? (
-                                  <div className="flex items-center gap-1 text-[11px] text-amber-700 font-bold bg-amber-50 px-2.5 py-1 rounded-xl border border-amber-200">
-                                    <Star className="w-3 h-3 fill-amber-400 text-amber-400" />
-                                    <span>Rated {b.rating}/5</span>
-                                    {b.review.isFlaggedForAdminReview && (
-                                      <span className="text-rose-600 font-extrabold ml-1">• Flagged</span>
-                                    )}
-                                  </div>
-                                ) : (
-                                  <button
-                                    onClick={() => {
-                                      const workerObj = workersList.find(w => w.id === b.workerId) || workersList[0];
-                                      setRatingModalData({ booking: b, worker: workerObj });
-                                    }}
-                                    className="px-3 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold rounded-xl text-xs flex items-center gap-1 shadow-2xs cursor-pointer"
-                                  >
-                                    <Star className="w-3.5 h-3.5 fill-slate-950" />
-                                    <span>Rate Karigar</span>
-                                  </button>
-                                )
-                              )}
-
-                              {(b.trade.includes('mechanic') || b.trade.includes('ac')) && (
-                                <button
-                                  onClick={() => {
-                                    const workerObj = workersList.find(w => w.id === b.workerId) || workersList[0];
-                                    setQuoteModalState({
-                                      show: true,
-                                      mode: currentRole === 'worker' ? 'worker_create' : 'customer_view',
-                                      worker: workerObj,
-                                      bookingId: b.id
-                                    });
-                                  }}
-                                  className="px-3 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold rounded-xl text-xs flex items-center gap-1 shadow-2xs"
-                                >
-                                  <DollarSign className="w-3.5 h-3.5" />
-                                  <span>{currentRole === 'worker' ? 'Send Estimate' : 'View Estimate'}</span>
-                                </button>
-                              )}
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="p-8 text-center bg-white border border-slate-200 rounded-2xl text-xs text-slate-500">
-                      No active bookings yet. Select a verified Karigar and tap 'Book Karigar'!
-                    </div>
-                  )}
+                <div id="service-history-container" className="space-y-4">
+                  <ServiceHistoryView
+                    currentRole={currentRole}
+                    currentLanguage={currentLanguage}
+                    bookings={myBookings}
+                    workersList={workersList}
+                    onBookAgain={(worker) => setBookingWorker(worker)}
+                    onCallWorker={(worker) => handleInitiateContact(worker, 'call')}
+                    onChatWorker={(worker) => handleOpenChatForWorker(worker)}
+                    onRateWorker={(booking, worker) => setRatingModalData({ booking, worker })}
+                    onOpenLiveTracker={(booking) => setActiveTrackerBooking(booking)}
+                  />
                 </div>
               )}
             </main>
 
             {/* STICKY ADMOB BANNER AT BOTTOM OF MAIN PAGES */}
-            <div className="sticky bottom-0 left-0 right-0 z-40 bg-slate-900 shadow-2xl">
+            <div className="sticky bottom-[53px] left-0 right-0 z-30 bg-slate-900 shadow-2xl">
               <BannerAd adUnitId={ADMOB_CONFIG.bannerAdUnitId} />
             </div>
+
+            {/* BOTTOM NAVIGATION BAR */}
+            <BottomNavBar
+              activeTab={activeTab}
+              onTabChange={(tab) => setActiveTab(tab)}
+              bookingsCount={myBookings.length}
+              currentRole={currentRole}
+              subContractJobsCount={subContractJobs.length}
+            />
 
             {/* MODALS */}
             {selectedWorkerDetail && (

@@ -73,12 +73,20 @@ export const LanguageSelector: React.FC<LanguageSelectorProps> = ({
           {filteredLanguages.map((lang) => {
             const isSelected = selectedLanguage === lang.code;
             return (
-              <motion.button
+              <motion.div
                 key={lang.code}
+                role="button"
+                tabIndex={0}
                 whileHover={{ scale: 1.01 }}
                 whileTap={{ scale: 0.98 }}
                 onClick={() => onSelectLanguage(lang.code)}
-                className={`relative p-3 rounded-xl border text-left transition-all flex flex-col justify-between ${
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    onSelectLanguage(lang.code);
+                  }
+                }}
+                className={`relative p-3 rounded-xl border text-left transition-all flex flex-col justify-between cursor-pointer select-none ${
                   isSelected
                     ? 'bg-blue-50 border-blue-600 ring-2 ring-blue-500/20 shadow-sm'
                     : 'bg-white hover:bg-slate-100 border-slate-200'
@@ -122,7 +130,7 @@ export const LanguageSelector: React.FC<LanguageSelectorProps> = ({
                 <span className="text-[10px] text-blue-700 font-medium mt-1 truncate">
                   {lang.subtext}
                 </span>
-              </motion.button>
+              </motion.div>
             );
           })}
         </div>

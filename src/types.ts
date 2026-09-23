@@ -128,10 +128,13 @@ export interface DirectBooking {
   bookingDate: string;
   timeSlot: string;
   address: string;
+  pinnedLat?: number;
+  pinnedLng?: number;
   isEmergency: boolean;
   notes: string;
   status: 'searching' | 'accepted' | 'in_transit' | 'work_started' | 'completed' | 'cancelled';
   startServiceOtp?: string;
+  startWorkCode?: string; // 4-digit code shared with worker when work begins
   otpVerified?: boolean;
   serviceStartedAt?: string;
   serviceFinishedAt?: string;
@@ -139,8 +142,13 @@ export interface DirectBooking {
   review?: WorkerReview;
   arrivalProgressPercent?: number;
   quote?: PostInspectionQuote;
+  totalPaidAmount?: number;
+  cancellationReason?: string;
+  invoiceNumber?: string;
+  completedAtDate?: string;
   createdAt: string;
   estimatedArrivalMins?: number;
+  currentDistanceKm?: number;
 }
 
 export interface ChatMessage {

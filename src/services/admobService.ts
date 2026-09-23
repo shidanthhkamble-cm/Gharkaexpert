@@ -2,15 +2,15 @@
  * Google Mobile Ads SDK (AdMob) Integration Service
  * 
  * Configured IDs:
- * - App ID: ca-app-pub-5878292936798547~8353334949
- * - Banner Ad Unit ID: ca-app-pub-5878292936798547/4087671354
- * - Interstitial Ad Unit ID: ca-app-pub-5878292936798547/5807062652
+ * - App ID: ca-app-pub-7439683563136300~5277822881
+ * - Banner Ad Unit ID: ca-app-pub-7439683563136300/3250425347
+ * - Interstitial Ad Unit ID: ca-app-pub-7439683563136300/5434744718
  */
 
 export const ADMOB_CONFIG = {
-  appId: 'ca-app-pub-5878292936798547~8353334949',
-  bannerAdUnitId: 'ca-app-pub-5878292936798547/4087671354',
-  interstitialAdUnitId: 'ca-app-pub-5878292936798547/5807062652',
+  appId: 'ca-app-pub-7439683563136300~5277822881',
+  bannerAdUnitId: 'ca-app-pub-7439683563136300/3250425347',
+  interstitialAdUnitId: 'ca-app-pub-7439683563136300/5434744718',
 };
 
 // Interface for global AdMob & GPT window objects

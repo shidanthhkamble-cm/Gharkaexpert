@@ -76,8 +76,8 @@ export const LiveArrivalTracker: React.FC<LiveArrivalTrackerProps> = ({
   onChatClick,
   onFinishService,
 }) => {
-  // Ensure we have a valid 4-digit OTP
-  const otp = booking.startServiceOtp || '4829';
+  // Ensure we have a valid 4-digit Start Work Code / OTP
+  const otp = booking.startWorkCode || booking.startServiceOtp || '4829';
   const isStarted = booking.status === 'work_started' || booking.status === 'completed';
 
   // Live progress simulation state
@@ -448,7 +448,7 @@ export const LiveArrivalTracker: React.FC<LiveArrivalTrackerProps> = ({
           <div className="px-1">
             <span className="text-[10px] text-slate-400 block font-medium">Distance Left</span>
             <span className="text-sm sm:text-base font-black text-emerald-400">
-              {progress >= 100 ? '0.0 km' : `${remainingDistanceKm} km`}
+              {progress >= 100 ? '0.0 km' : `${remainingDistanceKm} km away`}
             </span>
           </div>
           <div className="px-1">
@@ -457,6 +457,60 @@ export const LiveArrivalTracker: React.FC<LiveArrivalTrackerProps> = ({
               {progress >= 100 ? '0 km/h' : '28 km/h'}
             </span>
           </div>
+        </div>
+      </div>
+
+      {/* Live Worker Tracking Card (Distance, ETA & Call Worker Action) */}
+      <div className="p-3.5 bg-gradient-to-r from-slate-900 to-slate-800 border border-slate-700 rounded-2xl text-white shadow-md flex items-center justify-between gap-3">
+        <div className="flex items-center gap-3 min-w-0">
+          <div className="relative shrink-0">
+            <img
+              src={worker.photoUrl}
+              alt={worker.name}
+              className="w-12 h-12 rounded-full object-cover border-2 border-emerald-400 shadow-sm"
+            />
+            <span className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 bg-emerald-500 border-2 border-slate-900 rounded-full animate-pulse" />
+          </div>
+
+          <div className="min-w-0">
+            <div className="flex items-center gap-1.5">
+              <h4 className="font-extrabold text-sm text-white truncate">{worker.name}</h4>
+              <span className="text-[10px] bg-emerald-500/20 text-emerald-300 font-bold px-1.5 py-0.2 rounded border border-emerald-400/30">
+                On Route
+              </span>
+            </div>
+            <div className="flex items-center gap-2 text-xs text-slate-300 mt-0.5">
+              <span className="font-bold text-emerald-400 font-mono">
+                {progress >= 100 ? '0.0 km away' : `${remainingDistanceKm} km away`}
+              </span>
+              <span className="text-slate-500">•</span>
+              <span className="text-amber-300 font-semibold font-mono">
+                ETA: {progress >= 100 ? 'Arrived' : `${remainingMins} mins`}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-1.5 shrink-0">
+          <button
+            type="button"
+            id="btn-live-call-worker"
+            onClick={() => onCallClick(worker)}
+            className="p-2.5 px-3 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl shadow-sm transition-all flex items-center gap-1.5 text-xs cursor-pointer active:scale-95"
+            title="Call Worker"
+          >
+            <Phone className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">Call Worker</span>
+          </button>
+          <button
+            type="button"
+            id="btn-live-chat-worker"
+            onClick={() => onChatClick(worker.id)}
+            className="p-2.5 bg-blue-600 hover:bg-blue-500 text-white rounded-xl shadow-sm transition-all text-xs cursor-pointer active:scale-95"
+            title="Chat Worker"
+          >
+            <MessageSquare className="w-3.5 h-3.5" />
+          </button>
         </div>
       </div>
 
@@ -625,6 +679,14 @@ export const LiveArrivalTracker: React.FC<LiveArrivalTrackerProps> = ({
                         <p className="text-xs font-extrabold text-white leading-snug">
                           {booking.address || 'Doorstep Service Address'}
                         </p>
+                        {booking.pinnedLat && booking.pinnedLng && (
+                          <div className="flex items-center gap-1.5 mt-1">
+                            <span className="text-[10px] font-mono font-bold bg-rose-500/20 text-rose-300 px-1.5 py-0.5 rounded border border-rose-500/30 flex items-center gap-1">
+                              <MapPin className="w-3 h-3 text-rose-400" />
+                              <span>GPS Pin: {booking.pinnedLat.toFixed(5)}, {booking.pinnedLng.toFixed(5)}</span>
+                            </span>
+                          </div>
+                        )}
                         {booking.notes && (
                           <p className="text-[11px] text-amber-300/90 mt-0.5">
                             📍 Landmark / Notes: {booking.notes}
@@ -667,7 +729,7 @@ export const LiveArrivalTracker: React.FC<LiveArrivalTrackerProps> = ({
                   </div>
                 </div>
 
-                {/* Worker Turn-by-Turn Navigation Link */}
+                {/* Worker Turn-by-Turn Navigation Link with Exact GPS Pin */}
                 <div className="p-2.5 bg-emerald-950/50 border border-emerald-500/40 rounded-xl space-y-2">
                   <div className="flex items-center justify-between text-xs">
                     <span className="font-bold text-emerald-300 flex items-center gap-1">
@@ -680,13 +742,17 @@ export const LiveArrivalTracker: React.FC<LiveArrivalTrackerProps> = ({
                   </div>
 
                   <a
-                    href={`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(booking.address || 'Doorstep Service Site')}`}
+                    href={
+                      booking.pinnedLat && booking.pinnedLng
+                        ? `https://www.google.com/maps/dir/?api=1&destination=${booking.pinnedLat},${booking.pinnedLng}`
+                        : `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(booking.address || 'Doorstep Service Site')}`
+                    }
                     target="_blank"
                     rel="noopener noreferrer"
                     className="w-full py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-black rounded-lg text-xs flex items-center justify-center gap-1.5 shadow-md transition-all active:scale-95 cursor-pointer no-underline"
                   >
                     <ExternalLink className="w-3.5 h-3.5" />
-                    <span>Start Turn-by-Turn Navigation</span>
+                    <span>Start Turn-by-Turn Navigation {booking.pinnedLat ? '(Direct to GPS Pin)' : ''}</span>
                   </a>
                 </div>
 

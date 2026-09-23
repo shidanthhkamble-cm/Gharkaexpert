@@ -26,10 +26,16 @@ import {
   User,
   Zap,
   Check,
-  Info
+  Info,
+  MessageSquare,
+  Loader2,
+  Send,
+  RotateCw,
 } from 'lucide-react';
 import { Language, UserRole, TradeCategory } from '../types';
 import { t } from '../data/translations';
+import { whatsAppOtpService } from '../services/whatsappOtpService';
+import { googleAuthService } from '../services/authGateways';
 
 interface VerificationFlowProps {
   currentLanguage: Language;
@@ -84,18 +90,52 @@ export const VerificationFlow: React.FC<VerificationFlowProps> = ({
   const [phone, setPhone] = useState('');
   const [otp, setOtp] = useState(['', '', '', '', '', '']);
 
+  // WhatsApp OTP Authentication Gateway State
+  const [isSendingWhatsAppOtp, setIsSendingWhatsAppOtp] = useState(false);
+  const [isVerifyingWhatsAppOtp, setIsVerifyingWhatsAppOtp] = useState(false);
+  const [whatsAppOtpError, setWhatsAppOtpError] = useState<string | null>(null);
+  const [whatsAppOtpSuccess, setWhatsAppOtpSuccess] = useState<string | null>(null);
+  const [resendCountdown, setResendCountdown] = useState(30);
+  const [canResend, setCanResend] = useState(false);
+  const [lastDispatchedGateway, setLastDispatchedGateway] = useState<'Fast2SMS' | 'MSG91' | 'Standard SMS Gateway' | 'Truecaller 1-Click'>('Fast2SMS');
+  const [activeOtpChannel, setActiveOtpChannel] = useState<'whatsapp' | 'sms' | 'truecaller'>('whatsapp');
+  const [isTruecallerVerifying, setIsTruecallerVerifying] = useState(false);
+  const [isGoogleVerifying, setIsGoogleVerifying] = useState(false);
+
+  // 30-Second Countdown Timer for WhatsApp OTP Resend
+  useEffect(() => {
+    let timer: NodeJS.Timeout | null = null;
+    if ((step === 'customer_otp' || step === 'worker_otp') && resendCountdown > 0) {
+      setCanResend(false);
+      timer = setInterval(() => {
+        setResendCountdown((prev) => {
+          if (prev <= 1) {
+            setCanResend(true);
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+    } else if (resendCountdown === 0) {
+      setCanResend(true);
+    }
+    return () => {
+      if (timer) clearInterval(timer);
+    };
+  }, [step, resendCountdown]);
+
   // Worker Professional Details State
   const [fullName, setFullName] = useState('');
   const [primarySkill, setPrimarySkill] = useState<TradeCategory>('electrician');
   const [experienceYears, setExperienceYears] = useState<number>(5);
   const [pincode, setPincode] = useState('');
 
-  // Worker KYC & Aadhaar State
+  // Worker KYC & Aadhaar Photo Upload State
   const [aadhaarNumber, setAadhaarNumber] = useState('');
   const [isAadhaarVerified, setIsAadhaarVerified] = useState(false);
-  const [aadhaarOtpSent, setAadhaarOtpSent] = useState(false);
-  const [aadhaarOtpInput, setAadhaarOtpInput] = useState('');
-  const [isVerifyingAadhaarOtp, setIsVerifyingAadhaarOtp] = useState(false);
+  const [privacyConsent, setPrivacyConsent] = useState(false);
+  const [privacyConsentError, setPrivacyConsentError] = useState(false);
+  const [aadhaarUploadError, setAadhaarUploadError] = useState<string | null>(null);
 
   // Aadhaar Document Images (Front & Back)
   const [aadhaarFrontUrl, setAadhaarFrontUrl] = useState<string>('');
@@ -131,51 +171,209 @@ export const VerificationFlow: React.FC<VerificationFlowProps> = ({
     }
   };
 
-  // Customer Phone Submit
-  const handleCustomerPhoneSubmit = (e: React.FormEvent) => {
+  // Send WhatsApp OTP via Fast2SMS / MSG91 API Gateway
+  const sendWhatsAppOtpCode = async (targetPhone: string, role: 'customer' | 'worker') => {
+    setIsSendingWhatsAppOtp(true);
+    setWhatsAppOtpError(null);
+    setWhatsAppOtpSuccess(null);
+    setActiveOtpChannel('whatsapp');
+    try {
+      const resp = await whatsAppOtpService.sendWhatsAppOtp(targetPhone, role);
+      setLastDispatchedGateway(resp.gateway);
+      setWhatsAppOtpSuccess(`Verification code dispatched to your WhatsApp number via ${resp.gateway} Gateway.`);
+      setResendCountdown(30);
+      setCanResend(false);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Network timeout reaching WhatsApp API gateway. Please try again.';
+      setWhatsAppOtpError(msg);
+    } finally {
+      setIsSendingWhatsAppOtp(false);
+    }
+  };
+
+  // Fallback: Send Standard SMS OTP if WhatsApp unavailable
+  const sendSmsOtpFallback = async (role: 'customer' | 'worker') => {
+    setIsSendingWhatsAppOtp(true);
+    setWhatsAppOtpError(null);
+    setWhatsAppOtpSuccess(null);
+    try {
+      const resp = await whatsAppOtpService.sendFallbackSmsOtp(phone, role);
+      setActiveOtpChannel('sms');
+      setLastDispatchedGateway('Standard SMS Gateway');
+      setWhatsAppOtpSuccess(`SMS OTP dispatched directly to +91 ${phone} via Standard Telecom SMS.`);
+      setResendCountdown(30);
+      setCanResend(false);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Failed to send SMS OTP. Please check phone number.';
+      setWhatsAppOtpError(msg);
+    } finally {
+      setIsSendingWhatsAppOtp(false);
+    }
+  };
+
+  // 1-Click Login via Truecaller Verified SIM Handshake
+  const handleTruecallerLogin = async (role: 'customer' | 'worker') => {
+    if (phone.trim().length < 10) {
+      setWhatsAppOtpError('Please enter a valid 10-digit mobile number before using Truecaller 1-Click.');
+      return;
+    }
+
+    setIsTruecallerVerifying(true);
+    setWhatsAppOtpError(null);
+
+    try {
+      const resp = await whatsAppOtpService.verifyWithTruecaller(phone);
+      if (resp.verified) {
+        confetti({
+          particleCount: 60,
+          spread: 70,
+          origin: { y: 0.6 },
+        });
+
+        if (role === 'customer') {
+          setTimeout(() => {
+            onVerificationComplete({
+              name: 'Verified Customer (Truecaller)',
+              phone: `+91 ${phone}`,
+              photoUrl: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=400&auto=format&fit=crop&q=80',
+              verified: true,
+              role: 'customer',
+            });
+          }, 400);
+        } else {
+          // Worker advances directly past phone verification to details
+          setStep('worker_details');
+        }
+      } else {
+        setWhatsAppOtpError(resp.error || 'Truecaller 1-Click verification failed.');
+      }
+    } catch {
+      setWhatsAppOtpError('Truecaller verification service timed out. Please use WhatsApp OTP.');
+    } finally {
+      setIsTruecallerVerifying(false);
+    }
+  };
+
+  // 1-Click Primary Customer Sign-In with Google
+  const handleGoogleCustomerLogin = async () => {
+    setIsGoogleVerifying(true);
+    setWhatsAppOtpError(null);
+    try {
+      const resp = await googleAuthService.signInWithGoogle();
+      if (resp.success) {
+        confetti({
+          particleCount: 65,
+          spread: 80,
+          origin: { y: 0.6 },
+        });
+
+        setTimeout(() => {
+          onVerificationComplete({
+            name: resp.user.name,
+            phone: '+91 98765 43210',
+            photoUrl: resp.user.picture,
+            verified: true,
+            role: 'customer',
+          });
+        }, 350);
+      }
+    } catch {
+      setWhatsAppOtpError('Google Sign-In was cancelled or timed out. You can use Phone / WhatsApp OTP.');
+    } finally {
+      setIsGoogleVerifying(false);
+    }
+  };
+
+  // Customer Phone Submit -> triggers WhatsApp OTP dispatch
+  const handleCustomerPhoneSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (phone.trim().length >= 10) {
-      setOtp(['1', '2', '3', '4', '5', '6']);
+      setOtp(['', '', '', '', '', '']);
       setStep('customer_otp');
+      await sendWhatsAppOtpCode(phone, 'customer');
     }
+  };
+
+  // Resend WhatsApp OTP
+  const handleResendWhatsAppOtp = async (role: 'customer' | 'worker') => {
+    if (!canResend || isSendingWhatsAppOtp) return;
+    setOtp(['', '', '', '', '', '']);
+    await sendWhatsAppOtpCode(phone, role);
   };
 
   // Customer OTP Verify -> Navigates DIRECTLY to Home Screen
-  const handleCustomerOtpVerify = (e: React.FormEvent) => {
+  const handleCustomerOtpVerify = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (otp.join('').length === 6) {
-      confetti({
-        particleCount: 50,
-        spread: 60,
-        origin: { y: 0.6 },
-      });
-      // Direct Navigation to Home as Customer (No Aadhaar or documents collected)
-      setTimeout(() => {
-        onVerificationComplete({
-          name: 'Home Owner (Customer)',
-          phone: phone ? `+91 ${phone}` : '+91 98765 43210',
-          photoUrl: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=400&auto=format&fit=crop&q=80',
-          verified: true,
-          role: 'customer',
+    const enteredCode = otp.join('');
+    if (enteredCode.length !== 6) {
+      setWhatsAppOtpError('Please enter the complete 6-digit WhatsApp code.');
+      return;
+    }
+
+    setIsVerifyingWhatsAppOtp(true);
+    setWhatsAppOtpError(null);
+
+    try {
+      const result = await whatsAppOtpService.verifyWhatsAppOtp(phone, enteredCode);
+      if (result.verified) {
+        confetti({
+          particleCount: 50,
+          spread: 60,
+          origin: { y: 0.6 },
         });
-      }, 400);
+        // Direct Navigation to Home as Customer (No Aadhaar or documents collected)
+        setTimeout(() => {
+          onVerificationComplete({
+            name: 'Home Owner (Customer)',
+            phone: phone ? `+91 ${phone}` : '+91 98765 43210',
+            photoUrl: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=400&auto=format&fit=crop&q=80',
+            verified: true,
+            role: 'customer',
+          });
+        }, 400);
+      } else {
+        setWhatsAppOtpError(result.error || 'Invalid 6-digit WhatsApp code. Please check WhatsApp.');
+      }
+    } catch {
+      setWhatsAppOtpError('Network timeout verifying code. Please check connection and retry.');
+    } finally {
+      setIsVerifyingWhatsAppOtp(false);
     }
   };
 
-  // Worker Phone Submit
-  const handleWorkerPhoneSubmit = (e: React.FormEvent) => {
+  // Worker Phone Submit -> triggers WhatsApp OTP dispatch
+  const handleWorkerPhoneSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (phone.trim().length >= 10) {
-      setOtp(['1', '2', '3', '4', '5', '6']);
+      setOtp(['', '', '', '', '', '']);
       setStep('worker_otp');
+      await sendWhatsAppOtpCode(phone, 'worker');
     }
   };
 
   // Worker OTP Verify -> Navigates to Worker Details Form
-  const handleWorkerOtpVerify = (e: React.FormEvent) => {
+  const handleWorkerOtpVerify = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (otp.join('').length === 6) {
-      setStep('worker_details');
+    const enteredCode = otp.join('');
+    if (enteredCode.length !== 6) {
+      setWhatsAppOtpError('Please enter the complete 6-digit WhatsApp code.');
+      return;
+    }
+
+    setIsVerifyingWhatsAppOtp(true);
+    setWhatsAppOtpError(null);
+
+    try {
+      const result = await whatsAppOtpService.verifyWhatsAppOtp(phone, enteredCode);
+      if (result.verified) {
+        setStep('worker_details');
+      } else {
+        setWhatsAppOtpError(result.error || 'Invalid 6-digit WhatsApp code. Please check WhatsApp.');
+      }
+    } catch {
+      setWhatsAppOtpError('Network timeout verifying code. Please check connection and retry.');
+    } finally {
+      setIsVerifyingWhatsAppOtp(false);
     }
   };
 
@@ -187,41 +385,26 @@ export const VerificationFlow: React.FC<VerificationFlowProps> = ({
     }
   };
 
-  // Aadhaar OTP Simulation
-  const handleSendAadhaarOtp = () => {
-    if (aadhaarNumber.replace(/\s/g, '').length >= 4) {
-      setAadhaarOtpSent(true);
-      setAadhaarOtpInput('482910'); // Sample demo OTP
-    }
-  };
-
-  const handleVerifyAadhaarOtp = () => {
-    setIsVerifyingAadhaarOtp(true);
-    setTimeout(() => {
-      setIsVerifyingAadhaarOtp(false);
-      setIsAadhaarVerified(true);
-      // Auto assign sample document images if not yet set
-      if (!aadhaarFrontUrl) {
-        setAadhaarFrontUrl('https://images.unsplash.com/photo-1618042164219-62c820f10723?w=500&auto=format&fit=crop&q=80');
-      }
-      if (!aadhaarBackUrl) {
-        setAadhaarBackUrl('https://images.unsplash.com/photo-1589829545856-d10d557cf95f?w=500&auto=format&fit=crop&q=80');
-      }
-    }, 700);
-  };
-
-  // File Upload Handlers for Aadhaar Front & Back
+  // File Upload Handlers for Aadhaar Front & Back Photo Verification
   const handleFileChange = (
     e: React.ChangeEvent<HTMLInputElement>,
-    setter: (url: string) => void
+    setter: (url: string) => void,
+    side: 'front' | 'back'
   ) => {
     const file = e.target.files?.[0];
     if (file) {
       const reader = new FileReader();
       reader.onload = (uploadEvent) => {
         if (uploadEvent.target?.result) {
-          setter(uploadEvent.target.result as string);
-          setIsAadhaarVerified(true);
+          const url = uploadEvent.target.result as string;
+          setter(url);
+          setAadhaarUploadError(null);
+          // If both front and back will be present, mark verified
+          if (side === 'front' && aadhaarBackUrl) {
+            setIsAadhaarVerified(true);
+          } else if (side === 'back' && aadhaarFrontUrl) {
+            setIsAadhaarVerified(true);
+          }
         }
       };
       reader.readAsDataURL(file);
@@ -230,44 +413,77 @@ export const VerificationFlow: React.FC<VerificationFlowProps> = ({
 
   const handleUseSampleAadhaarFront = () => {
     setAadhaarFrontUrl('https://images.unsplash.com/photo-1618042164219-62c820f10723?w=500&auto=format&fit=crop&q=80');
-    setIsAadhaarVerified(true);
+    setAadhaarUploadError(null);
+    if (aadhaarBackUrl) {
+      setIsAadhaarVerified(true);
+    }
   };
 
   const handleUseSampleAadhaarBack = () => {
     setAadhaarBackUrl('https://images.unsplash.com/photo-1589829545856-d10d557cf95f?w=500&auto=format&fit=crop&q=80');
-    setIsAadhaarVerified(true);
+    setAadhaarUploadError(null);
+    if (aadhaarFrontUrl) {
+      setIsAadhaarVerified(true);
+    }
   };
 
-  // Worker KYC Continue -> Camera Selfie
+  // Worker KYC Continue -> Camera Selfie with Privacy Policy Consent & Aadhaar Photos Check
   const handleWorkerKycContinue = () => {
-    if (!aadhaarFrontUrl) {
-      setAadhaarFrontUrl('https://images.unsplash.com/photo-1618042164219-62c820f10723?w=500&auto=format&fit=crop&q=80');
+    if (!aadhaarFrontUrl || !aadhaarBackUrl) {
+      setAadhaarUploadError('Please upload both Front and Back photos of your Aadhaar card.');
+      return;
     }
-    if (!aadhaarBackUrl) {
-      setAadhaarBackUrl('https://images.unsplash.com/photo-1589829545856-d10d557cf95f?w=500&auto=format&fit=crop&q=80');
+    setAadhaarUploadError(null);
+
+    if (!privacyConsent) {
+      setPrivacyConsentError(true);
+      return;
     }
+    setPrivacyConsentError(false);
     setIsAadhaarVerified(true);
     setStep('worker_camera');
     startCamera();
   };
 
-  // Camera Management
+  // Live Camera Management with Device Permission Request
   const startCamera = async () => {
     setCameraError(null);
     try {
       if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 640 } },
-        });
-        if (videoRef.current) {
+        // Explicitly request front-facing selfie camera with fallback to any camera
+        let stream: MediaStream | null = null;
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({
+            video: {
+              facingMode: { ideal: 'user' },
+              width: { ideal: 640 },
+              height: { ideal: 640 },
+            },
+          });
+        } catch {
+          // Fallback if specific facingMode constraint fails on certain hardware/browsers
+          stream = await navigator.mediaDevices.getUserMedia({
+            video: true,
+          });
+        }
+
+        if (stream && videoRef.current) {
           videoRef.current.srcObject = stream;
+          videoRef.current.onloadedmetadata = () => {
+            videoRef.current?.play().catch(() => {});
+          };
           setIsCameraActive(true);
         }
       } else {
-        setCameraError('Camera API not accessible. You can use sample profile photo.');
+        setCameraError('Camera API not accessible in this browser view. You can use sample profile photo.');
       }
-    } catch {
-      setCameraError('Camera permission not granted or unavailable. Instant sample photo ready.');
+    } catch (err: unknown) {
+      const errorMsg = (err instanceof Error) ? err.message : String(err);
+      if (errorMsg.includes('Permission') || errorMsg.includes('denied') || errorMsg.includes('NotAllowedError')) {
+        setCameraError('Camera permission requested. Please allow camera access in browser prompt, or proceed with verified photo.');
+      } else {
+        setCameraError('Unable to open live camera device. You can proceed with instant sample photo.');
+      }
     }
   };
 
@@ -283,23 +499,18 @@ export const VerificationFlow: React.FC<VerificationFlowProps> = ({
   const snapPhoto = () => {
     if (videoRef.current && isCameraActive) {
       const canvas = document.createElement('canvas');
-      canvas.width = videoRef.current.videoWidth || 400;
-      canvas.height = videoRef.current.videoHeight || 400;
+      canvas.width = videoRef.current.videoWidth || 640;
+      canvas.height = videoRef.current.videoHeight || 640;
       const ctx = canvas.getContext('2d');
       if (ctx) {
         ctx.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height);
-        const dataUrl = canvas.toDataURL('image/jpeg');
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.9);
         setPhotoUrl(dataUrl);
         stopCamera();
       }
     } else {
-      useSamplePhoto();
+      setCameraError('Camera is not active. Please enable camera permission and start the live preview to capture selfie.');
     }
-  };
-
-  const useSamplePhoto = () => {
-    stopCamera();
-    setPhotoUrl('https://images.unsplash.com/photo-1540569014015-19a7be504e3a?w=400&auto=format&fit=crop&q=80');
   };
 
   const retakePhoto = () => {
@@ -352,8 +563,12 @@ export const VerificationFlow: React.FC<VerificationFlowProps> = ({
                 setStep('account_type');
               } else if (step === 'customer_otp') {
                 setStep('customer_phone');
+                setWhatsAppOtpError(null);
+                setWhatsAppOtpSuccess(null);
               } else if (step === 'worker_otp') {
                 setStep('worker_phone');
+                setWhatsAppOtpError(null);
+                setWhatsAppOtpSuccess(null);
               } else if (step === 'worker_details') {
                 setStep('worker_otp');
               } else if (step === 'worker_kyc') {
@@ -437,10 +652,10 @@ export const VerificationFlow: React.FC<VerificationFlowProps> = ({
                       Hire trusted local electricians, plumbers, masons & repair experts. Zero middlemen commission.
                     </p>
                     <div className="pt-1.5 flex flex-wrap gap-1.5">
-                      <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-blue-100 text-blue-800 rounded-md text-[10px] font-bold">
-                        ⚡ Quick Mobile OTP
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-emerald-100 text-emerald-900 rounded-md text-[10px] font-bold">
+                        💬 WhatsApp OTP Login
                       </span>
-                      <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-emerald-100 text-emerald-800 rounded-md text-[10px] font-bold">
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-blue-100 text-blue-800 rounded-md text-[10px] font-bold">
                         ✓ No ID Documents Required
                       </span>
                     </div>
@@ -509,7 +724,7 @@ export const VerificationFlow: React.FC<VerificationFlowProps> = ({
         )}
 
         {/* ========================================================================= */}
-        {/* 2. CUSTOMER FLOW: PHONE NUMBER                                            */}
+        {/* 2. CUSTOMER FLOW: SIGN IN (PRIMARY: GOOGLE, SECONDARY: PHONE/WHATSAPP OTP) */}
         {/* ========================================================================= */}
         {step === 'customer_phone' && (
           <motion.div
@@ -521,26 +736,80 @@ export const VerificationFlow: React.FC<VerificationFlowProps> = ({
           >
             <div className="text-center space-y-1">
               <div className="w-14 h-14 bg-blue-100 text-blue-700 rounded-2xl mx-auto flex items-center justify-center border border-blue-200 shadow-xs">
-                <Phone className="w-7 h-7" />
+                <Home className="w-7 h-7" />
               </div>
               <h3 className="text-xl font-bold text-slate-900">
-                Customer Mobile Login
+                Customer Sign-In
               </h3>
               <p className="text-xs text-slate-500 font-normal">
-                Enter your 10-digit mobile number for instant OTP verification
+                Choose your preferred quick sign-in method
               </p>
             </div>
 
             {/* Reassurance Notice */}
-            <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl flex items-center gap-2 text-xs text-emerald-900 font-medium">
+            <div className="p-2.5 bg-emerald-50 border border-emerald-200 rounded-xl flex items-center gap-2 text-xs text-emerald-900 font-medium">
               <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-              <span>No Aadhaar or document uploads required for customers.</span>
+              <span>Zero brokerage direct hiring • No Aadhaar upload needed for customers</span>
             </div>
 
-            <form onSubmit={handleCustomerPhoneSubmit} className="space-y-4">
+            {/* PRIMARY: CONTINUE WITH GOOGLE 1-CLICK */}
+            <div className="space-y-2">
+              <button
+                type="button"
+                id="btn-customer-google-signin"
+                onClick={handleGoogleCustomerLogin}
+                disabled={isGoogleVerifying || isSendingWhatsAppOtp}
+                className="w-full py-3.5 px-4 bg-white hover:bg-slate-50 text-slate-800 border-2 border-slate-300 hover:border-slate-400 font-bold rounded-xl shadow-sm transition-all flex items-center justify-center gap-3 text-sm cursor-pointer disabled:opacity-50 relative group"
+              >
+                {isGoogleVerifying ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin text-blue-600" />
+                    <span>Connecting to Google Identity...</span>
+                  </>
+                ) : (
+                  <>
+                    {/* Official Google 'G' Icon */}
+                    <svg className="w-5 h-5" viewBox="0 0 24 24">
+                      <path
+                        fill="#4285F4"
+                        d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
+                      />
+                      <path
+                        fill="#34A853"
+                        d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
+                      />
+                      <path
+                        fill="#FBBC05"
+                        d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"
+                      />
+                      <path
+                        fill="#EA4335"
+                        d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"
+                      />
+                    </svg>
+                    <span className="text-slate-900 font-extrabold">Continue with Google</span>
+                    <span className="ml-auto text-[10px] bg-blue-100 text-blue-800 font-black px-2 py-0.5 rounded-full">
+                      Fastest 1-Click
+                    </span>
+                  </>
+                )}
+              </button>
+            </div>
+
+            {/* DIVIDER */}
+            <div className="relative flex py-1 items-center">
+              <div className="flex-grow border-t border-slate-200"></div>
+              <span className="flex-shrink mx-3 text-[11px] font-bold text-slate-400 uppercase tracking-wider">
+                or continue with phone
+              </span>
+              <div className="flex-grow border-t border-slate-200"></div>
+            </div>
+
+            {/* SECONDARY OPTION: PHONE / WHATSAPP OTP */}
+            <form onSubmit={handleCustomerPhoneSubmit} className="space-y-3">
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  Mobile Number (10 Digits)
+                  Mobile Number (for WhatsApp / SMS OTP)
                 </label>
                 <div className="relative flex items-center">
                   <span className="absolute left-3.5 text-sm font-bold text-blue-700">
@@ -553,26 +822,39 @@ export const VerificationFlow: React.FC<VerificationFlowProps> = ({
                     value={phone}
                     onChange={(e) => setPhone(e.target.value.replace(/\D/g, ''))}
                     placeholder="9876543210"
-                    className="w-full pl-14 pr-4 py-3 bg-white border border-slate-200 rounded-xl text-base font-mono text-slate-900 tracking-wider focus:outline-none focus:border-blue-600 shadow-xs"
+                    className="w-full pl-14 pr-4 py-2.5 bg-white border border-slate-200 rounded-xl text-sm font-mono text-slate-900 tracking-wider focus:outline-none focus:border-blue-600 shadow-xs"
                   />
                 </div>
               </div>
 
-              <button
-                type="button"
-                onClick={handleQuickFillCustomer}
-                className="text-xs text-blue-700 font-bold underline hover:text-blue-800 cursor-pointer block"
-              >
-                ⚡ Click to auto-fill demo number (9876543210)
-              </button>
+              <div className="flex items-center justify-between">
+                <button
+                  type="button"
+                  onClick={handleQuickFillCustomer}
+                  className="text-xs text-blue-700 font-bold underline hover:text-blue-800 cursor-pointer"
+                >
+                  ⚡ Auto-fill demo number (9876543210)
+                </button>
+              </div>
 
               <button
                 type="submit"
-                disabled={phone.length < 10}
-                className="w-full py-3.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl shadow-md transition-all flex items-center justify-center gap-2 text-sm disabled:opacity-50 cursor-pointer"
+                id="btn-customer-whatsapp-otp"
+                disabled={phone.length < 10 || isSendingWhatsAppOtp || isGoogleVerifying}
+                className="w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl shadow-md transition-all flex items-center justify-center gap-2 text-sm disabled:opacity-50 cursor-pointer"
               >
-                <span>Send 6-Digit OTP</span>
-                <ArrowRight className="w-4 h-4" />
+                {isSendingWhatsAppOtp ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>Connecting WhatsApp Gateway...</span>
+                  </>
+                ) : (
+                  <>
+                    <MessageSquare className="w-4 h-4 text-emerald-100 fill-emerald-100/20" />
+                    <span>Continue with Phone / WhatsApp OTP</span>
+                    <ArrowRight className="w-4 h-4" />
+                  </>
+                )}
               </button>
             </form>
           </motion.div>
@@ -589,17 +871,50 @@ export const VerificationFlow: React.FC<VerificationFlowProps> = ({
             exit={{ opacity: 0, x: -20 }}
             className="space-y-4 my-auto"
           >
-            <div className="text-center space-y-1">
-              <div className="w-14 h-14 bg-blue-100 text-blue-700 rounded-2xl mx-auto flex items-center justify-center border border-blue-200 shadow-xs">
-                <KeyRound className="w-7 h-7" />
+            <div className="text-center space-y-1.5">
+              <div className="w-14 h-14 bg-emerald-500 text-white rounded-2xl mx-auto flex items-center justify-center shadow-md shadow-emerald-200">
+                {activeOtpChannel === 'sms' ? (
+                  <Phone className="w-7 h-7 text-white" />
+                ) : (
+                  <MessageSquare className="w-7 h-7 fill-white/20" />
+                )}
               </div>
               <h3 className="text-xl font-bold text-slate-900">
-                Verify Customer OTP
+                {activeOtpChannel === 'sms' ? 'SMS Code Verification' : 'WhatsApp Verification'}
               </h3>
-              <p className="text-xs text-slate-500 font-normal">
-                Code sent to <span className="font-bold text-slate-700">+91 {phone || '9876543210'}</span>
+              <p className="text-xs text-slate-600 font-medium">
+                {activeOtpChannel === 'sms'
+                  ? '6-digit SMS verification code sent to your number:'
+                  : '6-digit code sent to your WhatsApp number:'}
               </p>
+              <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-emerald-50 border border-emerald-200 rounded-full text-xs font-mono font-bold text-emerald-800">
+                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                <span>+91 {phone || '9876543210'}</span>
+              </div>
             </div>
+
+            {/* Success Dispatch Alert */}
+            {whatsAppOtpSuccess && !whatsAppOtpError && (
+              <div className="p-2.5 bg-emerald-50 border border-emerald-200 rounded-xl text-center text-xs text-emerald-800 font-medium flex items-center justify-center gap-1.5 animate-in fade-in duration-200">
+                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                <span>
+                  {activeOtpChannel === 'sms'
+                    ? '6-digit code sent via SMS to your mobile number'
+                    : '6-digit code sent to your WhatsApp number'}
+                </span>
+              </div>
+            )}
+
+            {/* Error or Timeout Alert */}
+            {whatsAppOtpError && (
+              <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-left text-xs text-rose-800 font-medium flex items-start gap-2 animate-in fade-in duration-200">
+                <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                <div className="flex-1">
+                  <p className="font-bold text-rose-900">Verification Alert</p>
+                  <p className="text-[11px] text-rose-700 leading-snug">{whatsAppOtpError}</p>
+                </div>
+              </div>
+            )}
 
             <form onSubmit={handleCustomerOtpVerify} className="space-y-4">
               <div className="flex justify-center gap-2">
@@ -611,24 +926,89 @@ export const VerificationFlow: React.FC<VerificationFlowProps> = ({
                     value={digit}
                     onChange={(e) => {
                       const newOtp = [...otp];
-                      newOtp[idx] = e.target.value;
+                      newOtp[idx] = e.target.value.replace(/\D/g, '');
                       setOtp(newOtp);
+                      if (e.target.value && e.target.nextElementSibling instanceof HTMLInputElement) {
+                        e.target.nextElementSibling.focus();
+                      }
                     }}
-                    className="w-11 h-12 text-center text-xl font-bold font-mono bg-white border border-slate-200 rounded-xl text-blue-700 focus:outline-none focus:border-blue-600 shadow-xs"
+                    className={`w-11 h-12 text-center text-xl font-bold font-mono bg-white border rounded-xl text-emerald-700 focus:outline-none focus:border-emerald-600 shadow-xs transition-colors ${
+                      whatsAppOtpError ? 'border-rose-300 ring-1 ring-rose-200' : 'border-slate-200'
+                    }`}
                   />
                 ))}
               </div>
 
-              <div className="p-2.5 bg-blue-50 border border-blue-200 rounded-xl text-center text-xs text-blue-900 font-medium">
-                Demo Code: <strong className="font-mono text-blue-700">123456</strong>
+              {/* Gateway & Delivery Info */}
+              <div className="p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-center text-xs text-slate-600 font-medium flex items-center justify-center gap-1.5">
+                <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" />
+                <span>
+                  {activeOtpChannel === 'sms'
+                    ? 'Standard Telecom SMS Gateway (Fallback Active)'
+                    : 'Fast2SMS / MSG91 Official WhatsApp Gateway'}
+                </span>
+              </div>
+
+              {/* 30-Second Countdown & Resend Button */}
+              <div className="flex items-center justify-between text-xs px-1">
+                <span className="text-slate-500">Didn't receive code?</span>
+                {canResend ? (
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => handleResendWhatsAppOtp('customer')}
+                      disabled={isSendingWhatsAppOtp}
+                      className="text-emerald-700 font-bold hover:text-emerald-800 flex items-center gap-1 cursor-pointer transition-colors"
+                    >
+                      <RotateCw className={`w-3.5 h-3.5 ${isSendingWhatsAppOtp ? 'animate-spin' : ''}`} />
+                      <span>Resend OTP via WhatsApp</span>
+                    </button>
+                    <span className="text-slate-300">|</span>
+                    <button
+                      type="button"
+                      onClick={() => sendSmsOtpFallback('customer')}
+                      disabled={isSendingWhatsAppOtp}
+                      className="text-blue-700 font-bold hover:text-blue-800 cursor-pointer"
+                    >
+                      Via SMS
+                    </button>
+                  </div>
+                ) : (
+                  <span className="font-semibold text-slate-500 font-mono flex items-center gap-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-ping"></span>
+                    Resend OTP in <strong>{resendCountdown}s</strong>
+                  </span>
+                )}
+              </div>
+
+              {/* Secondary Fallback Trigger if WhatsApp is delayed */}
+              <div className="pt-0.5 flex justify-center">
+                <button
+                  type="button"
+                  onClick={() => sendSmsOtpFallback('customer')}
+                  disabled={isSendingWhatsAppOtp}
+                  className="text-[11px] text-slate-500 hover:text-blue-700 font-medium flex items-center gap-1 cursor-pointer"
+                >
+                  <span>WhatsApp unavailable? Send OTP via Standard SMS</span>
+                </button>
               </div>
 
               <button
                 type="submit"
-                className="w-full py-3.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl shadow-md transition-all flex items-center justify-center gap-2 text-sm cursor-pointer"
+                disabled={otp.join('').length !== 6 || isVerifyingWhatsAppOtp}
+                className="w-full py-3.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl shadow-md transition-all flex items-center justify-center gap-2 text-sm disabled:opacity-50 cursor-pointer"
               >
-                <span>Verify OTP & Enter Home Screen 🚀</span>
-                <ArrowRight className="w-4 h-4" />
+                {isVerifyingWhatsAppOtp ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>Verifying {activeOtpChannel === 'sms' ? 'SMS Code' : 'with WhatsApp Gateway'}...</span>
+                  </>
+                ) : (
+                  <>
+                    <span>Verify OTP & Enter Home Screen 🚀</span>
+                    <ArrowRight className="w-4 h-4" />
+                  </>
+                )}
               </button>
             </form>
           </motion.div>
@@ -653,7 +1033,7 @@ export const VerificationFlow: React.FC<VerificationFlowProps> = ({
                 Karigar / Contractor Registration
               </h3>
               <p className="text-xs text-slate-500 font-normal">
-                Enter your mobile number to begin your verified worker profile
+                Enter your WhatsApp mobile number for instant 6-digit OTP verification
               </p>
             </div>
 
@@ -688,11 +1068,47 @@ export const VerificationFlow: React.FC<VerificationFlowProps> = ({
 
               <button
                 type="submit"
-                disabled={phone.length < 10}
-                className="w-full py-3.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl shadow-md transition-all flex items-center justify-center gap-2 text-sm disabled:opacity-50 cursor-pointer"
+                disabled={phone.length < 10 || isSendingWhatsAppOtp || isTruecallerVerifying}
+                className="w-full py-3.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl shadow-md transition-all flex items-center justify-center gap-2 text-sm disabled:opacity-50 cursor-pointer"
               >
-                <span>Send 6-Digit OTP</span>
-                <ArrowRight className="w-4 h-4" />
+                {isSendingWhatsAppOtp ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>Connecting WhatsApp Gateway...</span>
+                  </>
+                ) : (
+                  <>
+                    <MessageSquare className="w-4 h-4 text-emerald-100 fill-emerald-100/20" />
+                    <span>Send 6-Digit WhatsApp OTP</span>
+                    <ArrowRight className="w-4 h-4" />
+                  </>
+                )}
+              </button>
+
+              {/* Alternative 1-Click Login: Truecaller Instant Handshake */}
+              <div className="relative flex py-1 items-center">
+                <div className="flex-grow border-t border-slate-200"></div>
+                <span className="flex-shrink mx-2 text-[11px] font-bold text-slate-400 uppercase tracking-wider">or instant login</span>
+                <div className="flex-grow border-t border-slate-200"></div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => handleTruecallerLogin('worker')}
+                disabled={isTruecallerVerifying || isSendingWhatsAppOtp}
+                className="w-full py-2.5 bg-sky-50 hover:bg-sky-100 text-sky-700 border border-sky-200 font-bold rounded-xl transition-all flex items-center justify-center gap-2 text-xs cursor-pointer disabled:opacity-50"
+              >
+                {isTruecallerVerifying ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin text-sky-600" />
+                    <span>Verifying with Truecaller 1-Click...</span>
+                  </>
+                ) : (
+                  <>
+                    <Zap className="w-3.5 h-3.5 fill-sky-600 text-sky-600" />
+                    <span>Truecaller 1-Click Login (Instant Verified SIM)</span>
+                  </>
+                )}
               </button>
             </form>
           </motion.div>
@@ -709,17 +1125,50 @@ export const VerificationFlow: React.FC<VerificationFlowProps> = ({
             exit={{ opacity: 0, x: -20 }}
             className="space-y-4 my-auto"
           >
-            <div className="text-center space-y-1">
-              <div className="w-14 h-14 bg-amber-100 text-amber-800 rounded-2xl mx-auto flex items-center justify-center border border-amber-200 shadow-xs">
-                <KeyRound className="w-7 h-7" />
+            <div className="text-center space-y-1.5">
+              <div className="w-14 h-14 bg-emerald-500 text-white rounded-2xl mx-auto flex items-center justify-center shadow-md shadow-emerald-200">
+                {activeOtpChannel === 'sms' ? (
+                  <Phone className="w-7 h-7 text-white" />
+                ) : (
+                  <MessageSquare className="w-7 h-7 fill-white/20" />
+                )}
               </div>
               <h3 className="text-xl font-bold text-slate-900">
-                Verify Mobile Number
+                {activeOtpChannel === 'sms' ? 'Worker SMS Verification' : 'Worker WhatsApp Verification'}
               </h3>
-              <p className="text-xs text-slate-500 font-normal">
-                Enter code sent to +91 {phone || '9812345678'}
+              <p className="text-xs text-slate-600 font-medium">
+                {activeOtpChannel === 'sms'
+                  ? '6-digit SMS verification code sent to your number:'
+                  : '6-digit code sent to your WhatsApp number:'}
               </p>
+              <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-emerald-50 border border-emerald-200 rounded-full text-xs font-mono font-bold text-emerald-800">
+                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                <span>+91 {phone || '9812345678'}</span>
+              </div>
             </div>
+
+            {/* Success Dispatch Alert */}
+            {whatsAppOtpSuccess && !whatsAppOtpError && (
+              <div className="p-2.5 bg-emerald-50 border border-emerald-200 rounded-xl text-center text-xs text-emerald-800 font-medium flex items-center justify-center gap-1.5 animate-in fade-in duration-200">
+                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                <span>
+                  {activeOtpChannel === 'sms'
+                    ? '6-digit code sent via SMS to your mobile number'
+                    : '6-digit code sent to your WhatsApp number'}
+                </span>
+              </div>
+            )}
+
+            {/* Error or Timeout Alert */}
+            {whatsAppOtpError && (
+              <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-left text-xs text-rose-800 font-medium flex items-start gap-2 animate-in fade-in duration-200">
+                <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                <div className="flex-1">
+                  <p className="font-bold text-rose-900">Verification Alert</p>
+                  <p className="text-[11px] text-rose-700 leading-snug">{whatsAppOtpError}</p>
+                </div>
+              </div>
+            )}
 
             <form onSubmit={handleWorkerOtpVerify} className="space-y-4">
               <div className="flex justify-center gap-2">
@@ -731,24 +1180,89 @@ export const VerificationFlow: React.FC<VerificationFlowProps> = ({
                     value={digit}
                     onChange={(e) => {
                       const newOtp = [...otp];
-                      newOtp[idx] = e.target.value;
+                      newOtp[idx] = e.target.value.replace(/\D/g, '');
                       setOtp(newOtp);
+                      if (e.target.value && e.target.nextElementSibling instanceof HTMLInputElement) {
+                        e.target.nextElementSibling.focus();
+                      }
                     }}
-                    className="w-11 h-12 text-center text-xl font-bold font-mono bg-white border border-slate-200 rounded-xl text-blue-700 focus:outline-none focus:border-blue-600 shadow-xs"
+                    className={`w-11 h-12 text-center text-xl font-bold font-mono bg-white border rounded-xl text-emerald-700 focus:outline-none focus:border-emerald-600 shadow-xs transition-colors ${
+                      whatsAppOtpError ? 'border-rose-300 ring-1 ring-rose-200' : 'border-slate-200'
+                    }`}
                   />
                 ))}
               </div>
 
-              <div className="p-2.5 bg-blue-50 border border-blue-200 rounded-xl text-center text-xs text-blue-900 font-medium">
-                Demo Code: <strong className="font-mono text-blue-700">123456</strong>
+              {/* Gateway & Delivery Info */}
+              <div className="p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-center text-xs text-slate-600 font-medium flex items-center justify-center gap-1.5">
+                <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" />
+                <span>
+                  {activeOtpChannel === 'sms'
+                    ? 'Standard Telecom SMS Gateway (Fallback Active)'
+                    : 'Fast2SMS / MSG91 Official WhatsApp Gateway'}
+                </span>
+              </div>
+
+              {/* 30-Second Countdown & Resend Button */}
+              <div className="flex items-center justify-between text-xs px-1">
+                <span className="text-slate-500">Didn't receive code?</span>
+                {canResend ? (
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => handleResendWhatsAppOtp('worker')}
+                      disabled={isSendingWhatsAppOtp}
+                      className="text-emerald-700 font-bold hover:text-emerald-800 flex items-center gap-1 cursor-pointer transition-colors"
+                    >
+                      <RotateCw className={`w-3.5 h-3.5 ${isSendingWhatsAppOtp ? 'animate-spin' : ''}`} />
+                      <span>Resend OTP via WhatsApp</span>
+                    </button>
+                    <span className="text-slate-300">|</span>
+                    <button
+                      type="button"
+                      onClick={() => sendSmsOtpFallback('worker')}
+                      disabled={isSendingWhatsAppOtp}
+                      className="text-blue-700 font-bold hover:text-blue-800 cursor-pointer"
+                    >
+                      Via SMS
+                    </button>
+                  </div>
+                ) : (
+                  <span className="font-semibold text-slate-500 font-mono flex items-center gap-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-ping"></span>
+                    Resend OTP in <strong>{resendCountdown}s</strong>
+                  </span>
+                )}
+              </div>
+
+              {/* Secondary Fallback Trigger if WhatsApp is delayed */}
+              <div className="pt-0.5 flex justify-center">
+                <button
+                  type="button"
+                  onClick={() => sendSmsOtpFallback('worker')}
+                  disabled={isSendingWhatsAppOtp}
+                  className="text-[11px] text-slate-500 hover:text-blue-700 font-medium flex items-center gap-1 cursor-pointer"
+                >
+                  <span>WhatsApp unavailable? Send OTP via Standard SMS</span>
+                </button>
               </div>
 
               <button
                 type="submit"
-                className="w-full py-3.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl shadow-md transition-all flex items-center justify-center gap-2 text-sm cursor-pointer"
+                disabled={otp.join('').length !== 6 || isVerifyingWhatsAppOtp}
+                className="w-full py-3.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl shadow-md transition-all flex items-center justify-center gap-2 text-sm disabled:opacity-50 cursor-pointer"
               >
-                <span>Continue to Profile Details</span>
-                <ArrowRight className="w-4 h-4" />
+                {isVerifyingWhatsAppOtp ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>Verifying {activeOtpChannel === 'sms' ? 'SMS Code' : 'with WhatsApp Gateway'}...</span>
+                  </>
+                ) : (
+                  <>
+                    <span>Continue to Profile Details</span>
+                    <ArrowRight className="w-4 h-4" />
+                  </>
+                )}
               </button>
             </form>
           </motion.div>
@@ -911,13 +1425,13 @@ export const VerificationFlow: React.FC<VerificationFlowProps> = ({
                   </div>
                   <div>
                     <h4 className="text-xs font-bold text-emerald-950 flex items-center gap-1">
-                      Aadhaar Verified
+                      Aadhaar Photos Uploaded
                       <span className="text-[10px] bg-emerald-200 text-emerald-800 px-1.5 py-0.2 rounded font-black">
-                        UIDAI MATCHED
+                        FRONT & BACK READY
                       </span>
                     </h4>
                     <p className="text-[10px] text-emerald-700 font-medium">
-                      Identity authenticated & stored securely for Admin review
+                      Both sides captured & stored securely for Admin review
                     </p>
                   </div>
                 </div>
@@ -925,52 +1439,36 @@ export const VerificationFlow: React.FC<VerificationFlowProps> = ({
               </div>
             )}
 
-            {/* Optional Aadhaar Number Input with One-Click OTP Verification */}
-            <div className="space-y-1.5 p-3 bg-white border border-slate-200 rounded-2xl shadow-2xs">
-              <label className="block text-xs font-semibold text-slate-700">
-                Aadhaar Number (12 Digits)
-              </label>
-              <div className="flex items-center gap-2">
-                <input
-                  type="text"
-                  maxLength={14}
-                  value={aadhaarNumber}
-                  onChange={(e) => setAadhaarNumber(e.target.value.replace(/\D/g, ''))}
-                  placeholder="e.g. 5412 8934 7612"
-                  className="flex-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 font-mono text-xs focus:outline-none focus:border-blue-600"
-                />
-                {!isAadhaarVerified && (
-                  <button
-                    type="button"
-                    onClick={handleSendAadhaarOtp}
-                    className="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl shrink-0 cursor-pointer shadow-2xs"
-                  >
-                    Send OTP
-                  </button>
-                )}
+            {/* Aadhaar Number (Optional / Display) */}
+            <div className="space-y-1.5 p-3.5 bg-white border border-slate-200 rounded-2xl shadow-2xs">
+              <div className="flex items-center justify-between">
+                <label className="block text-xs font-bold text-slate-800">
+                  Aadhaar Number (12 Digits)
+                </label>
+                <span className="text-[10px] text-slate-500 font-semibold bg-slate-100 px-2 py-0.5 rounded-full border border-slate-200">
+                  Photo Verification Mode
+                </span>
               </div>
-
-              {aadhaarOtpSent && !isAadhaarVerified && (
-                <div className="pt-2 flex items-center gap-2">
-                  <input
-                    type="text"
-                    maxLength={6}
-                    value={aadhaarOtpInput}
-                    onChange={(e) => setAadhaarOtpInput(e.target.value)}
-                    placeholder="Enter 6-digit Aadhaar OTP"
-                    className="flex-1 px-3 py-1.5 bg-slate-50 border border-slate-300 rounded-lg text-xs font-mono"
-                  />
-                  <button
-                    type="button"
-                    onClick={handleVerifyAadhaarOtp}
-                    disabled={isVerifyingAadhaarOtp}
-                    className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-lg cursor-pointer"
-                  >
-                    {isVerifyingAadhaarOtp ? 'Verifying...' : 'Verify'}
-                  </button>
-                </div>
-              )}
+              <input
+                type="text"
+                maxLength={12}
+                value={aadhaarNumber}
+                onChange={(e) => setAadhaarNumber(e.target.value.replace(/\D/g, '').slice(0, 12))}
+                placeholder="Enter 12-digit Aadhaar number (matching card)"
+                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 font-mono text-xs focus:outline-none focus:border-blue-600 tracking-wider"
+              />
+              <p className="text-[10px] text-slate-500">
+                * Upload clear photos of your original Aadhaar card below (Front & Back). No OTP required.
+              </p>
             </div>
+
+            {/* Upload Error Banner if submitted without both photos */}
+            {aadhaarUploadError && (
+              <div className="p-2.5 bg-rose-50 border border-rose-300 rounded-xl flex items-center gap-2 text-rose-800 text-xs font-semibold animate-in fade-in duration-200">
+                <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+                <span>{aadhaarUploadError}</span>
+              </div>
+            )}
 
             {/* DOCUMENT UPLOADS: AADHAAR FRONT & AADHAAR BACK (ADDRESS) */}
             <div className="space-y-3">
@@ -979,7 +1477,7 @@ export const VerificationFlow: React.FC<VerificationFlowProps> = ({
                 <div className="flex items-center justify-between">
                   <label className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
                     <FileText className="w-3.5 h-3.5 text-blue-600" />
-                    <span>Aadhaar Front Image (Photo & Name) *</span>
+                    <span>1. Aadhaar Front Photo (Name, Photo & DOB) *</span>
                   </label>
                   {aadhaarFrontUrl && (
                     <span className="text-[10px] text-emerald-700 font-bold flex items-center gap-0.5">
@@ -991,7 +1489,7 @@ export const VerificationFlow: React.FC<VerificationFlowProps> = ({
                 <input
                   type="file"
                   ref={frontFileInputRef}
-                  onChange={(e) => handleFileChange(e, setAadhaarFrontUrl)}
+                  onChange={(e) => handleFileChange(e, setAadhaarFrontUrl, 'front')}
                   accept="image/*"
                   className="hidden"
                 />
@@ -1005,7 +1503,7 @@ export const VerificationFlow: React.FC<VerificationFlowProps> = ({
                         className="w-12 h-8 object-cover rounded-lg border border-slate-300 shrink-0"
                       />
                       <div className="min-w-0">
-                        <p className="text-xs font-bold text-slate-800 truncate">Aadhaar Front Card</p>
+                        <p className="text-xs font-bold text-slate-800 truncate">Aadhaar Front Card Photo</p>
                         <p className="text-[10px] text-slate-500">Private Admin Copy Attached</p>
                       </div>
                     </div>
@@ -1014,7 +1512,7 @@ export const VerificationFlow: React.FC<VerificationFlowProps> = ({
                       onClick={() => frontFileInputRef.current?.click()}
                       className="text-xs font-bold text-blue-700 hover:underline cursor-pointer"
                     >
-                      Change
+                      Change Photo
                     </button>
                   </div>
                 ) : (
@@ -1025,14 +1523,14 @@ export const VerificationFlow: React.FC<VerificationFlowProps> = ({
                       className="flex-1 py-2 px-3 border border-dashed border-blue-400 bg-blue-50/50 hover:bg-blue-100/60 rounded-xl text-blue-700 font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer transition-colors"
                     >
                       <UploadCloud className="w-3.5 h-3.5" />
-                      <span>Upload Front Side</span>
+                      <span>Upload Front Photo</span>
                     </button>
                     <button
                       type="button"
                       onClick={handleUseSampleAadhaarFront}
                       className="py-2 px-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl border border-slate-200 shrink-0 cursor-pointer"
                     >
-                      Sample Copy
+                      Sample Front
                     </button>
                   </div>
                 )}
@@ -1043,7 +1541,7 @@ export const VerificationFlow: React.FC<VerificationFlowProps> = ({
                 <div className="flex items-center justify-between">
                   <label className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
                     <FileText className="w-3.5 h-3.5 text-blue-600" />
-                    <span>Aadhaar Back Image (Address) *</span>
+                    <span>2. Aadhaar Back Photo (Complete Address & QR) *</span>
                   </label>
                   {aadhaarBackUrl && (
                     <span className="text-[10px] text-emerald-700 font-bold flex items-center gap-0.5">
@@ -1055,7 +1553,7 @@ export const VerificationFlow: React.FC<VerificationFlowProps> = ({
                 <input
                   type="file"
                   ref={backFileInputRef}
-                  onChange={(e) => handleFileChange(e, setAadhaarBackUrl)}
+                  onChange={(e) => handleFileChange(e, setAadhaarBackUrl, 'back')}
                   accept="image/*"
                   className="hidden"
                 />
@@ -1069,7 +1567,7 @@ export const VerificationFlow: React.FC<VerificationFlowProps> = ({
                         className="w-12 h-8 object-cover rounded-lg border border-slate-300 shrink-0"
                       />
                       <div className="min-w-0">
-                        <p className="text-xs font-bold text-slate-800 truncate">Aadhaar Back (Address)</p>
+                        <p className="text-xs font-bold text-slate-800 truncate">Aadhaar Back Photo (Address)</p>
                         <p className="text-[10px] text-slate-500">Address verified for local dispatch</p>
                       </div>
                     </div>
@@ -1078,7 +1576,7 @@ export const VerificationFlow: React.FC<VerificationFlowProps> = ({
                       onClick={() => backFileInputRef.current?.click()}
                       className="text-xs font-bold text-blue-700 hover:underline cursor-pointer"
                     >
-                      Change
+                      Change Photo
                     </button>
                   </div>
                 ) : (
@@ -1089,14 +1587,14 @@ export const VerificationFlow: React.FC<VerificationFlowProps> = ({
                       className="flex-1 py-2 px-3 border border-dashed border-blue-400 bg-blue-50/50 hover:bg-blue-100/60 rounded-xl text-blue-700 font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer transition-colors"
                     >
                       <UploadCloud className="w-3.5 h-3.5" />
-                      <span>Upload Back (Address)</span>
+                      <span>Upload Back Photo</span>
                     </button>
                     <button
                       type="button"
                       onClick={handleUseSampleAadhaarBack}
                       className="py-2 px-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl border border-slate-200 shrink-0 cursor-pointer"
                     >
-                      Sample Copy
+                      Sample Back
                     </button>
                   </div>
                 )}
@@ -1120,6 +1618,34 @@ export const VerificationFlow: React.FC<VerificationFlowProps> = ({
                   Verified Karigar
                 </span>
               </div>
+            </div>
+
+            {/* EXPLICIT PRIVACY POLICY CONSENT CHECKBOX (DPDP ACT COMPLIANT) */}
+            <div className={`p-3 rounded-2xl border transition-colors ${
+              privacyConsentError && !privacyConsent
+                ? 'bg-rose-50 border-rose-300 ring-2 ring-rose-200'
+                : 'bg-slate-50 border-slate-200'
+            }`}>
+              <label className="flex items-start gap-2.5 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={privacyConsent}
+                  onChange={(e) => {
+                    setPrivacyConsent(e.target.checked);
+                    if (e.target.checked) setPrivacyConsentError(false);
+                  }}
+                  className="mt-0.5 w-4 h-4 text-blue-600 rounded border-slate-300 focus:ring-blue-500 cursor-pointer shrink-0"
+                />
+                <span className="text-xs text-slate-800 font-medium leading-snug">
+                  I allow <strong>GharKaExpert</strong> to verify my identity documents under the <strong>Privacy Policy</strong>.
+                </span>
+              </label>
+              {privacyConsentError && !privacyConsent && (
+                <p className="text-[11px] text-rose-600 font-bold mt-1.5 pl-6 flex items-center gap-1">
+                  <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                  Please allow GharKaExpert to verify your identity documents under the Privacy Policy.
+                </p>
+              )}
             </div>
 
             <button
@@ -1181,9 +1707,20 @@ export const VerificationFlow: React.FC<VerificationFlowProps> = ({
             </div>
 
             {cameraError && (
-              <div className="p-2 bg-orange-50 border border-orange-200 rounded-xl text-center text-xs text-orange-900 max-w-xs flex items-center gap-1.5">
-                <AlertCircle className="w-4 h-4 shrink-0 text-orange-600" />
-                <span>{cameraError}</span>
+              <div className="p-2.5 bg-orange-50 border border-orange-200 rounded-xl text-center text-xs text-orange-950 max-w-xs space-y-1.5 animate-in fade-in duration-200">
+                <div className="flex items-center justify-center gap-1.5 font-semibold text-orange-900">
+                  <AlertCircle className="w-4 h-4 shrink-0 text-orange-600" />
+                  <span>Camera Access Alert</span>
+                </div>
+                <p className="text-[11px] text-orange-800 leading-snug">{cameraError}</p>
+                <button
+                  type="button"
+                  onClick={startCamera}
+                  className="px-3 py-1 bg-orange-600 hover:bg-orange-700 text-white font-bold text-xs rounded-lg cursor-pointer transition-colors shadow-2xs inline-flex items-center gap-1"
+                >
+                  <RefreshCw className="w-3 h-3" />
+                  <span>Retry Camera Permission</span>
+                </button>
               </div>
             )}
 
@@ -1193,17 +1730,22 @@ export const VerificationFlow: React.FC<VerificationFlowProps> = ({
                   <button
                     type="button"
                     onClick={snapPhoto}
-                    className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl shadow-md flex items-center justify-center gap-2 text-sm cursor-pointer"
+                    disabled={!isCameraActive}
+                    className="w-full py-3 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-bold rounded-xl shadow-md flex items-center justify-center gap-2 text-sm cursor-pointer"
                   >
+                    <Camera className="w-4 h-4" />
                     <span>{t('clickPhotoBtn', currentLanguage)}</span>
                   </button>
-                  <button
-                    type="button"
-                    onClick={useSamplePhoto}
-                    className="w-full py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-xs border border-slate-200 cursor-pointer"
-                  >
-                    Use Sample Verified Photo 📸
-                  </button>
+                  {!isCameraActive && (
+                    <button
+                      type="button"
+                      onClick={startCamera}
+                      className="w-full py-2 bg-blue-50 hover:bg-blue-100 text-blue-700 font-bold rounded-xl text-xs border border-blue-200 flex items-center justify-center gap-1.5 cursor-pointer"
+                    >
+                      <RefreshCw className="w-3.5 h-3.5" />
+                      <span>Start Front Camera</span>
+                    </button>
+                  )}
                 </div>
               ) : (
                 <div className="space-y-2">
