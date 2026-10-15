@@ -36,6 +36,7 @@ import { Language, UserRole, TradeCategory } from '../types';
 import { t } from '../data/translations';
 import { whatsAppOtpService } from '../services/whatsappOtpService';
 import { googleAuthService } from '../services/authGateways';
+import { deviceCameraService } from '../services/capacitorDeviceService';
 
 interface VerificationFlowProps {
   currentLanguage: Language;
@@ -408,6 +409,38 @@ export const VerificationFlow: React.FC<VerificationFlowProps> = ({
         }
       };
       reader.readAsDataURL(file);
+    }
+  };
+
+  // Native Device Camera Capture via @capacitor/camera
+  const handleCapacitorCameraCapture = async (side: 'front' | 'back') => {
+    try {
+      const result = await deviceCameraService.capturePhoto();
+      if (result.success && result.dataUrl) {
+        if (side === 'front') {
+          setAadhaarFrontUrl(result.dataUrl);
+          setAadhaarUploadError(null);
+          if (aadhaarBackUrl) setIsAadhaarVerified(true);
+        } else {
+          setAadhaarBackUrl(result.dataUrl);
+          setAadhaarUploadError(null);
+          if (aadhaarFrontUrl) setIsAadhaarVerified(true);
+        }
+      } else if (result.error && !result.error.includes('User cancelled')) {
+        // Fallback to standard file/camera dialog if native plugin prompt fails
+        if (side === 'front') {
+          frontFileInputRef.current?.click();
+        } else {
+          backFileInputRef.current?.click();
+        }
+      }
+    } catch {
+      // Fallback to file picker
+      if (side === 'front') {
+        frontFileInputRef.current?.click();
+      } else {
+        backFileInputRef.current?.click();
+      }
     }
   };
 
@@ -1504,33 +1537,45 @@ export const VerificationFlow: React.FC<VerificationFlowProps> = ({
                       />
                       <div className="min-w-0">
                         <p className="text-xs font-bold text-slate-800 truncate">Aadhaar Front Card Photo</p>
-                        <p className="text-[10px] text-slate-500">Private Admin Copy Attached</p>
+                        <p className="text-[10px] text-slate-500">Camera / Document Copy Attached</p>
                       </div>
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => frontFileInputRef.current?.click()}
-                      className="text-xs font-bold text-blue-700 hover:underline cursor-pointer"
-                    >
-                      Change Photo
-                    </button>
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => handleCapacitorCameraCapture('front')}
+                        className="p-1.5 bg-blue-50 text-blue-700 hover:bg-blue-100 rounded-lg text-xs font-bold flex items-center gap-1 cursor-pointer"
+                        title="Retake with Device Camera"
+                      >
+                        <Camera className="w-3.5 h-3.5" />
+                        <span>Retake</span>
+                      </button>
+                    </div>
                   </div>
                 ) : (
                   <div className="flex items-center gap-2">
                     <button
                       type="button"
+                      onClick={() => handleCapacitorCameraCapture('front')}
+                      className="flex-1 py-2 px-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer transition-colors shadow-2xs"
+                    >
+                      <Camera className="w-3.5 h-3.5" />
+                      <span>Take Photo / Upload</span>
+                    </button>
+                    <button
+                      type="button"
                       onClick={() => frontFileInputRef.current?.click()}
-                      className="flex-1 py-2 px-3 border border-dashed border-blue-400 bg-blue-50/50 hover:bg-blue-100/60 rounded-xl text-blue-700 font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer transition-colors"
+                      className="py-2 px-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl border border-slate-200 flex items-center gap-1 shrink-0 cursor-pointer"
                     >
                       <UploadCloud className="w-3.5 h-3.5" />
-                      <span>Upload Front Photo</span>
+                      <span>File</span>
                     </button>
                     <button
                       type="button"
                       onClick={handleUseSampleAadhaarFront}
-                      className="py-2 px-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl border border-slate-200 shrink-0 cursor-pointer"
+                      className="py-2 px-2 bg-slate-50 hover:bg-slate-100 text-slate-500 font-medium text-xs rounded-xl border border-slate-200 shrink-0 cursor-pointer"
                     >
-                      Sample Front
+                      Sample
                     </button>
                   </div>
                 )}
@@ -1571,30 +1616,42 @@ export const VerificationFlow: React.FC<VerificationFlowProps> = ({
                         <p className="text-[10px] text-slate-500">Address verified for local dispatch</p>
                       </div>
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => backFileInputRef.current?.click()}
-                      className="text-xs font-bold text-blue-700 hover:underline cursor-pointer"
-                    >
-                      Change Photo
-                    </button>
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => handleCapacitorCameraCapture('back')}
+                        className="p-1.5 bg-blue-50 text-blue-700 hover:bg-blue-100 rounded-lg text-xs font-bold flex items-center gap-1 cursor-pointer"
+                        title="Retake with Device Camera"
+                      >
+                        <Camera className="w-3.5 h-3.5" />
+                        <span>Retake</span>
+                      </button>
+                    </div>
                   </div>
                 ) : (
                   <div className="flex items-center gap-2">
                     <button
                       type="button"
+                      onClick={() => handleCapacitorCameraCapture('back')}
+                      className="flex-1 py-2 px-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer transition-colors shadow-2xs"
+                    >
+                      <Camera className="w-3.5 h-3.5" />
+                      <span>Take Photo / Upload</span>
+                    </button>
+                    <button
+                      type="button"
                       onClick={() => backFileInputRef.current?.click()}
-                      className="flex-1 py-2 px-3 border border-dashed border-blue-400 bg-blue-50/50 hover:bg-blue-100/60 rounded-xl text-blue-700 font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer transition-colors"
+                      className="py-2 px-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl border border-slate-200 flex items-center gap-1 shrink-0 cursor-pointer"
                     >
                       <UploadCloud className="w-3.5 h-3.5" />
-                      <span>Upload Back Photo</span>
+                      <span>File</span>
                     </button>
                     <button
                       type="button"
                       onClick={handleUseSampleAadhaarBack}
-                      className="py-2 px-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl border border-slate-200 shrink-0 cursor-pointer"
+                      className="py-2 px-2 bg-slate-50 hover:bg-slate-100 text-slate-500 font-medium text-xs rounded-xl border border-slate-200 shrink-0 cursor-pointer"
                     >
-                      Sample Back
+                      Sample
                     </button>
                   </div>
                 )}
@@ -1736,16 +1793,32 @@ export const VerificationFlow: React.FC<VerificationFlowProps> = ({
                     <Camera className="w-4 h-4" />
                     <span>{t('clickPhotoBtn', currentLanguage)}</span>
                   </button>
-                  {!isCameraActive && (
+                  <div className="flex items-center gap-2">
                     <button
                       type="button"
-                      onClick={startCamera}
-                      className="w-full py-2 bg-blue-50 hover:bg-blue-100 text-blue-700 font-bold rounded-xl text-xs border border-blue-200 flex items-center justify-center gap-1.5 cursor-pointer"
+                      onClick={async () => {
+                        const result = await deviceCameraService.takeCameraPhoto();
+                        if (result.success && result.dataUrl) {
+                          setPhotoUrl(result.dataUrl);
+                          stopCamera();
+                        }
+                      }}
+                      className="flex-1 py-2 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-xl text-xs flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs"
                     >
-                      <RefreshCw className="w-3.5 h-3.5" />
-                      <span>Start Front Camera</span>
+                      <Camera className="w-3.5 h-3.5 text-blue-400" />
+                      <span>Device Camera App</span>
                     </button>
-                  )}
+                    {!isCameraActive && (
+                      <button
+                        type="button"
+                        onClick={startCamera}
+                        className="flex-1 py-2 bg-blue-50 hover:bg-blue-100 text-blue-700 font-bold rounded-xl text-xs border border-blue-200 flex items-center justify-center gap-1.5 cursor-pointer"
+                      >
+                        <RefreshCw className="w-3.5 h-3.5" />
+                        <span>Start Viewport</span>
+                      </button>
+                    )}
+                  </div>
                 </div>
               ) : (
                 <div className="space-y-2">

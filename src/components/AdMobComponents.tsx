@@ -179,6 +179,7 @@ interface InterstitialAdModalProps {
   onProceedAction?: () => void;
   actionType?: 'call' | 'instant_dispatch' | 'whatsapp' | 'booking';
   targetWorkerName?: string;
+  onOpenVipPaywall?: () => void;
 }
 
 const INTERSTITIAL_CREATIVES = [
@@ -224,6 +225,7 @@ export const InterstitialAdModal: React.FC<InterstitialAdModalProps> = ({
   onProceedAction,
   actionType = 'call',
   targetWorkerName,
+  onOpenVipPaywall,
 }) => {
   const TOTAL_DURATION = 3;
   const [countdown, setCountdown] = useState(TOTAL_DURATION);
@@ -392,6 +394,22 @@ export const InterstitialAdModal: React.FC<InterstitialAdModalProps> = ({
               </>
             )}
           </button>
+
+          {/* VIP Upgrade Callout to permanently remove interstitials */}
+          {onOpenVipPaywall && (
+            <div className="pt-1 w-full text-center">
+              <button
+                type="button"
+                onClick={() => {
+                  onClose();
+                  onOpenVipPaywall();
+                }}
+                className="text-[11px] text-amber-300 hover:text-amber-200 font-extrabold flex items-center justify-center gap-1 mx-auto py-1 px-2.5 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 transition-all cursor-pointer"
+              >
+                <span>👑 Upgrade to VIP (₹99/mo) • Remove all full-screen ads!</span>
+              </button>
+            </div>
+          )}
         </div>
       </motion.div>
     </div>

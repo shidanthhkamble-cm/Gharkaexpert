@@ -5,12 +5,24 @@
  * - App ID: ca-app-pub-7439683563136300~5277822881
  * - Banner Ad Unit ID: ca-app-pub-7439683563136300/3250425347
  * - Interstitial Ad Unit ID: ca-app-pub-7439683563136300/5434744718
+ * 
+ * Monetization Rules:
+ * 1. Free Users (No Recharge):
+ *    - Show Banner Ads (Fixed at bottom screen).
+ *    - Show Full-Screen Interstitial Ads on high-intent actions (Call, Reveal Phone Number, Booking navigation).
+ *    - Frequency Capping: Max 1 interstitial ad per 2 minutes (120 seconds).
+ * 2. VIP Users (₹99/mo or ₹999/yr):
+ *    - Show ONLY Non-intrusive Banner Ads at bottom.
+ *    - STRICTLY REMOVE/BLOCK ALL Full-Screen Interstitial Ads so workflow is never interrupted.
  */
+
+import { VipSubscriptionState } from '../types';
 
 export const ADMOB_CONFIG = {
   appId: 'ca-app-pub-7439683563136300~5277822881',
   bannerAdUnitId: 'ca-app-pub-7439683563136300/3250425347',
   interstitialAdUnitId: 'ca-app-pub-7439683563136300/5434744718',
+  frequencyCapSeconds: 120, // 2 minutes frequency cap for free users
 };
 
 // Interface for global AdMob & GPT window objects
@@ -39,6 +51,7 @@ declare global {
 class AdMobService {
   private isInitialized = false;
   private isInterstitialReady = false;
+  private lastInterstitialTimestamp: number = 0;
 
   /**
    * Initializes the Google Mobile Ads SDK
@@ -47,10 +60,8 @@ class AdMobService {
     if (this.isInitialized) return;
 
     try {
-      // Ensure Google Publisher Tag / Google Mobile Ads SDK queue exists
       window.googletag = window.googletag || { cmd: [] };
       
-      // Load Google AdMob / GPT script if not present
       if (!document.getElementById('admob-gpt-script')) {
         const script = document.createElement('script');
         script.id = 'admob-gpt-script';
@@ -58,7 +69,6 @@ class AdMobService {
         script.async = true;
         script.crossOrigin = 'anonymous';
         script.onerror = () => {
-          // Gracefully handle ad-blocker or offline sandbox environments
           console.info('[AdMob SDK] Ad network script blocked or offline; falling back gracefully.');
         };
         document.head.appendChild(script);
@@ -75,7 +85,7 @@ class AdMobService {
             window.googletag.enableServices();
           }
         } catch {
-          // Fallback gracefully if ad scripts are suppressed
+          // Fallback gracefully
         }
       });
 
@@ -104,10 +114,75 @@ class AdMobService {
   }
 
   /**
-   * Trigger an interstitial ad on contact/call action
+   * Check frequency capping logic (max 1 interstitial ad per 2 minutes for free users)
+   */
+  public canShowInterstitial(isVip: boolean): boolean {
+    // VIP users strictly blocked from all full-screen interstitials
+    if (isVip) {
+      return false;
+    }
+
+    const now = Date.now();
+    const elapsedSeconds = (now - this.lastInterstitialTimestamp) / 1000;
+    return elapsedSeconds >= ADMOB_CONFIG.frequencyCapSeconds;
+  }
+
+  /**
+   * Record that an interstitial ad was displayed
+   */
+  public recordInterstitialShown(): void {
+    this.lastInterstitialTimestamp = Date.now();
+  }
+
+  /**
+   * Seconds remaining until the next interstitial can be shown
+   */
+  public getRemainingCooldownSeconds(): number {
+    const elapsed = (Date.now() - this.lastInterstitialTimestamp) / 1000;
+    const remaining = Math.max(0, Math.ceil(ADMOB_CONFIG.frequencyCapSeconds - elapsed));
+    return remaining;
+  }
+
+  /**
+   * High-Intent Action Trigger Helper:
+   * if (!user.isVipUser) { showInterstitialAdThenProceed(); } else { proceedDirectly(); }
+   */
+  public handleHighIntentAction({
+    user,
+    onShowInterstitial,
+    onProceedDirectly,
+    forceSkipCooldown = false,
+  }: {
+    user: VipSubscriptionState;
+    onShowInterstitial: () => void;
+    onProceedDirectly: () => void;
+    forceSkipCooldown?: boolean;
+  }): void {
+    // 1. If VIP User: Proceed directly without interruption
+    if (user.isVipUser) {
+      console.log('[AdMob Service] VIP User verified - Bypassing all Interstitial Ads');
+      onProceedDirectly();
+      return;
+    }
+
+    // 2. Free User: Check Frequency Capping (max 1 ad per 2 mins)
+    const allowedByCooldown = this.canShowInterstitial(false);
+    if (!forceSkipCooldown && !allowedByCooldown) {
+      console.log(`[AdMob Service] Free User within 2-min frequency cap (${this.getRemainingCooldownSeconds()}s left) - Proceeding directly`);
+      onProceedDirectly();
+      return;
+    }
+
+    // 3. Free User outside cooldown: Show Interstitial Ad
+    console.log('[AdMob Service] Free User triggered High-Intent Interstitial Ad');
+    this.recordInterstitialShown();
+    onShowInterstitial();
+  }
+
+  /**
+   * Direct Cordova/Capacitor native interstitial trigger fallback
    */
   public triggerInterstitial(onComplete: () => void): void {
-    // If native Cordova / Capacitor AdMob plugin is present
     if (window.admob?.interstitial) {
       window.admob.interstitial
         .load({ id: ADMOB_CONFIG.interstitialAdUnitId })
@@ -116,8 +191,6 @@ class AdMobService {
         .catch(() => onComplete());
       return;
     }
-
-    // Handled via React state in UI
     onComplete();
   }
 }

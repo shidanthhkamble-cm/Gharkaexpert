@@ -19,6 +19,7 @@ import {
 import { WorkerProfile, DirectBooking, Language } from '../types';
 import { t, getCategoryLabel } from '../data/translations';
 import { getCategory3DIcon } from '../data/categoryIcons';
+import { deviceLocationService } from '../services/capacitorDeviceService';
 
 interface DirectBookingModalProps {
   worker: WorkerProfile | null;
@@ -113,29 +114,19 @@ export const DirectBookingModal: React.FC<DirectBookingModalProps> = ({
     }
   };
 
-  // Device Geolocation Handshake
-  const handleGetCurrentLocation = () => {
-    if (!navigator.geolocation) {
-      setPinPos({ x: 50, y: 48 });
-      return;
-    }
-
+  // Device Geolocation Handshake via @capacitor/geolocation with fallback
+  const handleGetCurrentLocation = async () => {
     setIsLocatingGps(true);
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        setIsLocatingGps(false);
-        const { latitude, longitude } = pos.coords;
-        setPinnedCoords({ lat: +latitude.toFixed(6), lng: +longitude.toFixed(6) });
-        setPinPos({ x: 50, y: 50 });
-        setAddress(prev => prev || `GPS Pinned Location (${latitude.toFixed(4)}, ${longitude.toFixed(4)})`);
-      },
-      () => {
-        setIsLocatingGps(false);
-        // Fallback default pinpoint
-        setPinnedCoords({ lat: initialPreset.lat, lng: initialPreset.lng });
-      },
-      { timeout: 5000 }
-    );
+    try {
+      const pos = await deviceLocationService.getCurrentPosition();
+      setPinnedCoords({ lat: pos.latitude, lng: pos.longitude });
+      setPinPos({ x: 50, y: 50 });
+      setAddress(prev => prev || `Doorstep Location (GPS: ${pos.latitude.toFixed(4)}, ${pos.longitude.toFixed(4)})`);
+    } catch {
+      setPinnedCoords({ lat: initialPreset.lat, lng: initialPreset.lng });
+    } finally {
+      setIsLocatingGps(false);
+    }
   };
 
   const handleSubmit = (e: React.FormEvent) => {

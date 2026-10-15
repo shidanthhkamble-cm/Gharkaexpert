@@ -25,10 +25,27 @@ import {
   Star,
   Clock,
   MapPin,
-  History
+  History,
+  Crown,
+  ShieldCheck
 } from 'lucide-react';
 
-import { Language, UserRole, TradeCategory, WorkerProfile, PortfolioItem, SubContractJob, DirectBooking, Conversation, ChatMessage, PostInspectionQuote, WorkerReview } from './types';
+import { 
+  Language, 
+  UserRole, 
+  TradeCategory, 
+  WorkerProfile, 
+  PortfolioItem, 
+  SubContractJob, 
+  DirectBooking, 
+  Conversation, 
+  ChatMessage, 
+  PostInspectionQuote, 
+  WorkerReview,
+  VipPlanTier,
+  VipSubscriptionState,
+  PaymentTransactionResult
+} from './types';
 import { t, getCategoryLabel } from './data/translations';
 import { INITIAL_WORKERS, INITIAL_SUB_CONTRACTS } from './data/initialData';
 import { INITIAL_CONVERSATIONS } from './data/initialChats';
@@ -54,6 +71,9 @@ import { InboxModal } from './components/InboxModal';
 // GharKaExpert New Feature Components
 import { BannerAd, NativeAdCard, InterstitialAdModal } from './components/AdMobComponents';
 import { admobService, ADMOB_CONFIG } from './services/admobService';
+import { VipPaywallModal } from './components/VipPaywallModal';
+import { PaymentCheckoutModal } from './components/PaymentCheckoutModal';
+import { PaymentService } from './services/paymentService';
 import { EmergencyDispatchModal } from './components/EmergencyDispatchModal';
 import { CategoryActionModal } from './components/CategoryActionModal';
 import { PostInspectionQuoteModal } from './components/PostInspectionQuoteModal';
@@ -86,6 +106,16 @@ export default function App() {
     photoUrl: 'https://images.unsplash.com/photo-1540569014015-19a7be504e3a?w=400&auto=format&fit=crop&q=80',
     verified: true,
   });
+
+  // VIP Subscription State (Monetization: Free vs VIP Tiered Model)
+  const [vipSubscription, setVipSubscription] = useState<VipSubscriptionState>(() => {
+    return PaymentService.loadSubscription();
+  });
+
+  const [showVipPaywall, setShowVipPaywall] = useState<boolean>(false);
+  const [vipPaywallReason, setVipPaywallReason] = useState<'ad_skipped' | 'direct_call' | 'header_badge' | 'general'>('general');
+  const [showCheckoutModal, setShowCheckoutModal] = useState<boolean>(false);
+  const [checkoutPlanTier, setCheckoutPlanTier] = useState<VipPlanTier>('yearly');
 
   // Main Home State
   const [activeTab, setActiveTab] = useState<'workers' | 'portfolio' | 'passwork' | 'bookings'>('workers');
@@ -251,20 +281,37 @@ export default function App() {
     admobService.initialize();
   }, []);
 
-  // Trigger Google AdMob Interstitial Ad right when user connects via In-App Masked Call or Chat
+  // Trigger Google AdMob Interstitial Ad or Proceed Directly based on VIP status
   const handleInitiateContact = (worker: WorkerProfile, mode: 'call' | 'whatsapp') => {
-    setPendingAdAction({ type: mode, worker });
-    setInterstitialTitle(
-      mode === 'call'
-        ? `Connecting Masked Call to ${worker.name} • Google AdMob`
-        : `Connecting In-App Chat with ${worker.name} • Google AdMob`
-    );
-    setInterstitialSubtitle(
-      mode === 'call'
-        ? `Encrypted in-app routing to ${worker.name} (Ext #${worker.id.replace('worker-', '')}) with platform warranty protection.`
-        : `Opening secure in-app messaging with ${worker.name}. Anti-bypass platform protected.`
-    );
-    setShowInterstitialAd(true);
+    const proceedDirectly = () => {
+      setCommModal({
+        worker,
+        mode,
+      });
+    };
+
+    const showAdThenProceed = () => {
+      setPendingAdAction({ type: mode, worker });
+      setInterstitialTitle(
+        mode === 'call'
+          ? `Connecting Masked Call to ${worker.name} • Google AdMob`
+          : `Connecting In-App Chat with ${worker.name} • Google AdMob`
+      );
+      setInterstitialSubtitle(
+        mode === 'call'
+          ? `Encrypted in-app routing to ${worker.name} (Ext #${worker.id.replace('worker-', '')}) with platform warranty protection.`
+          : `Opening secure in-app messaging with ${worker.name}. Anti-bypass platform protected.`
+      );
+      setShowInterstitialAd(true);
+    };
+
+    // Requirement:
+    // if (!user.isVipUser) { showInterstitialAdThenProceed(); } else { proceedDirectly(); }
+    admobService.handleHighIntentAction({
+      user: vipSubscription,
+      onShowInterstitial: showAdThenProceed,
+      onProceedDirectly: proceedDirectly,
+    });
   };
 
   // When user clicks ANY skill category icon (Plumbing, Carpentry, Mason, AC, etc.) or '⚡ 2 Options' badge
@@ -281,17 +328,30 @@ export default function App() {
   };
 
   // Option 1: 'Instant Dispatch'
-  // Automatically search and connect with an available worker within a strict 1.5km radius using Fair Rotation algorithm (triggering an Interstitial ad first).
+  // Automatically search and connect with an available worker within a strict 1.5km radius using Fair Rotation algorithm.
   const handleInstantDispatchFromCategory = (category: TradeCategory) => {
     setIsActionModalOpen(false);
     setSelectedCategory(category);
     const catLabel = getCategoryLabel(category, currentLanguage) || category;
-    setPendingAdAction({ type: 'instant_dispatch', category });
-    setInterstitialTitle(`Instant Dispatch: ${catLabel} • Google AdMob`);
-    setInterstitialSubtitle(
-      `Auto-matching available ${catLabel} within a strict 1.5km radius using Fair Rotation algorithm. Auto-initiating masked call with 0% commission.`
-    );
-    setShowInterstitialAd(true);
+
+    const proceedDirectly = () => {
+      setShowEmergencyDispatch(true);
+    };
+
+    const showAdThenProceed = () => {
+      setPendingAdAction({ type: 'instant_dispatch', category });
+      setInterstitialTitle(`Instant Dispatch: ${catLabel} • Google AdMob`);
+      setInterstitialSubtitle(
+        `Auto-matching available ${catLabel} within a strict 1.5km radius using Fair Rotation algorithm. Auto-initiating masked call with 0% commission.`
+      );
+      setShowInterstitialAd(true);
+    };
+
+    admobService.handleHighIntentAction({
+      user: vipSubscription,
+      onShowInterstitial: showAdThenProceed,
+      onProceedDirectly: proceedDirectly,
+    });
   };
 
   // Option 2: 'Browse Profiles'
@@ -523,10 +583,23 @@ export default function App() {
       currentDistanceKm: newBooking.currentDistanceKm ?? 2.4,
     };
     setMyBookings((prev) => [bookingWithOtp, ...prev]);
-    setPendingAdAction({ type: 'booking_tracker', booking: bookingWithOtp });
-    setInterstitialTitle('Booking Confirmed! Google AdMob Sponsor Offer');
-    setInterstitialSubtitle('Your Karigar appointment is locked. Sponsored by Google AdMob.');
-    setShowInterstitialAd(true);
+
+    const proceedDirectly = () => {
+      setActiveTrackerBooking(bookingWithOtp);
+    };
+
+    const showAdThenProceed = () => {
+      setPendingAdAction({ type: 'booking_tracker', booking: bookingWithOtp });
+      setInterstitialTitle('Booking Confirmed! Google AdMob Sponsor Offer');
+      setInterstitialSubtitle('Your Karigar appointment is locked. Sponsored by Google AdMob.');
+      setShowInterstitialAd(true);
+    };
+
+    admobService.handleHighIntentAction({
+      user: vipSubscription,
+      onShowInterstitial: showAdThenProceed,
+      onProceedDirectly: proceedDirectly,
+    });
   };
 
   // Worker Emergency Match Acceptance
@@ -557,10 +630,23 @@ export default function App() {
       createdAt: new Date().toISOString()
     };
     setMyBookings((prev) => [emergencyBooking, ...prev]);
-    setPendingAdAction({ type: 'booking_tracker', booking: emergencyBooking });
-    setInterstitialTitle(`Karigar Dispatched: ${worker.name} • Google AdMob`);
-    setInterstitialSubtitle(`Live GPS tracking for ${worker.name} will begin once sponsor message completes.`);
-    setShowInterstitialAd(true);
+
+    const proceedDirectly = () => {
+      setActiveTrackerBooking(emergencyBooking);
+    };
+
+    const showAdThenProceed = () => {
+      setPendingAdAction({ type: 'booking_tracker', booking: emergencyBooking });
+      setInterstitialTitle(`Karigar Dispatched: ${worker.name} • Google AdMob`);
+      setInterstitialSubtitle(`Live GPS tracking for ${worker.name} will begin once sponsor message completes.`);
+      setShowInterstitialAd(true);
+    };
+
+    admobService.handleHighIntentAction({
+      user: vipSubscription,
+      onShowInterstitial: showAdThenProceed,
+      onProceedDirectly: proceedDirectly,
+    });
   };
 
   // Send Post-Inspection Quote Handler
@@ -731,6 +817,11 @@ export default function App() {
               userPhoto={userProfile.photoUrl}
               onOpenInbox={() => setShowInboxModal(true)}
               unreadCount={totalUnreadCount}
+              vipSubscription={vipSubscription}
+              onOpenVipPaywall={() => {
+                setVipPaywallReason('header_badge');
+                setShowVipPaywall(true);
+              }}
             />
 
             {/* Main Content Area */}
@@ -783,6 +874,79 @@ export default function App() {
                   </button>
                 </div>
               </div>
+
+              {/* VIP Subscription Card: Free user sees Yellow VIP Banner, VIP user sees 'VIP Member Active' badge */}
+              {!vipSubscription.isVipUser ? (
+                <div 
+                  onClick={() => {
+                    setVipPaywallReason('general');
+                    setShowVipPaywall(true);
+                  }}
+                  className="bg-gradient-to-r from-amber-500 via-amber-400 to-yellow-300 text-slate-950 rounded-2xl p-3 shadow-md flex items-center justify-between gap-3 cursor-pointer hover:shadow-lg transition-all active:scale-[0.99] border border-amber-300"
+                >
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <div className="w-9 h-9 rounded-xl bg-slate-950 text-amber-400 flex items-center justify-center shrink-0 shadow-sm">
+                      <Zap className="w-5 h-5 fill-amber-400 text-amber-400" />
+                    </div>
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className="font-black text-xs sm:text-sm text-slate-950 tracking-tight">
+                          Upgrade to VIP • ₹99/mo or ₹999/yr
+                        </span>
+                        <span className="bg-slate-950 text-amber-300 text-[9px] font-black px-1.5 py-0.5 rounded-full uppercase">
+                          No Full-Screen Ads
+                        </span>
+                      </div>
+                      <p className="text-[10px] sm:text-xs text-slate-800 font-bold truncate">
+                        Block all full-screen pop-ups & connect direct calls instantly with 0 waiting!
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    className="py-1.5 px-3 bg-slate-950 hover:bg-slate-900 text-amber-300 font-black text-xs rounded-xl shrink-0 shadow-sm flex items-center gap-1 cursor-pointer"
+                  >
+                    <span>View Plans</span>
+                    <ChevronRight className="w-3 h-3 text-amber-300" />
+                  </button>
+                </div>
+              ) : (
+                /* VIP Member Active Badge Card (Yellow Banner is hidden, VIP Active is displayed) */
+                <div 
+                  onClick={() => {
+                    setVipPaywallReason('general');
+                    setShowVipPaywall(true);
+                  }}
+                  className="bg-gradient-to-r from-slate-900 via-slate-850 to-slate-900 text-white rounded-2xl p-3.5 shadow-md flex items-center justify-between gap-3 border-2 border-amber-400/70 hover:border-amber-400 transition-all cursor-pointer relative overflow-hidden"
+                >
+                  <div className="absolute -top-8 -right-8 w-24 h-24 bg-amber-400/10 rounded-full blur-xl pointer-events-none" />
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-amber-500 to-yellow-300 text-slate-950 flex items-center justify-center shrink-0 shadow-md">
+                      <Crown className="w-5 h-5 fill-slate-950 text-slate-950 stroke-[2.2]" />
+                    </div>
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-black text-sm text-white tracking-tight flex items-center gap-1.5">
+                          VIP Member Active
+                        </span>
+                        <span className="bg-amber-400 text-slate-950 text-[9px] font-black px-2 py-0.5 rounded-full uppercase tracking-wider shadow-xs">
+                          {vipSubscription.planType === 'yearly' ? 'Yearly VIP (₹999)' : 'Monthly VIP (₹99)'}
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-amber-200/90 font-medium truncate mt-0.5">
+                        Zero Pop-Up Ads Active • Valid until {PaymentService.formatExpiryDate(vipSubscription.expiryDate || vipSubscription.expiresAt)}
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    className="py-1.5 px-3 bg-slate-800 hover:bg-slate-700 text-amber-300 border border-amber-400/40 font-bold text-xs rounded-xl shrink-0 shadow-xs flex items-center gap-1 cursor-pointer"
+                  >
+                    <span>Manage</span>
+                    <ChevronRight className="w-3 h-3 text-amber-300" />
+                  </button>
+                </div>
+              )}
 
               {/* Service Categories Grid */}
               <CategoryGrid
@@ -1334,6 +1498,10 @@ export default function App() {
                     ? pendingAdAction.worker.name
                     : undefined
                 }
+                onOpenVipPaywall={() => {
+                  setVipPaywallReason('ad_skipped');
+                  setShowVipPaywall(true);
+                }}
                 onClose={() => {
                   setShowInterstitialAd(false);
                   if (pendingAdAction) {
@@ -1474,6 +1642,45 @@ export default function App() {
                 </button>
               </div>
             )}
+
+            {/* VIP SUBSCRIPTION PAYWALL MODAL (₹99/mo & ₹999/yr) */}
+            <VipPaywallModal
+              isOpen={showVipPaywall}
+              onClose={() => setShowVipPaywall(false)}
+              currentSubscription={vipSubscription}
+              reason={vipPaywallReason}
+              onProceedToCheckout={(tier: VipPlanTier) => {
+                setShowVipPaywall(false);
+                setCheckoutPlanTier(tier);
+                setShowCheckoutModal(true);
+              }}
+              onSubscribe={(tier: VipPlanTier) => {
+                setShowVipPaywall(false);
+                setCheckoutPlanTier(tier);
+                setShowCheckoutModal(true);
+              }}
+            />
+
+            {/* VIP PAYMENT CHECKOUT GATEWAY MODAL (UPI, Cards, Net Banking, Wallets) */}
+            <PaymentCheckoutModal
+              isOpen={showCheckoutModal}
+              onClose={() => setShowCheckoutModal(false)}
+              planType={checkoutPlanTier}
+              onPaymentSuccess={(result: PaymentTransactionResult) => {
+                // Update user's state instantly with isVipUser = true, planType, and expiryDate (30 or 365 days)
+                const updatedSub = PaymentService.createSubscriptionFromPayment(result);
+                setVipSubscription(updatedSub);
+                PaymentService.saveSubscription(updatedSub);
+
+                // Show instant positive confirmation banner
+                setAdminAlertMessage(
+                  `👑 VIP Member Active (${result.planType === 'yearly' ? '₹999 Yearly Plan' : '₹99 Monthly Plan'})! All full-screen interstitial ads have been completely removed.`
+                );
+              }}
+              onPaymentFailure={(error) => {
+                console.log('VIP Payment attempt cancelled or failed:', error);
+              }}
+            />
           </div>
         )}
       </div>

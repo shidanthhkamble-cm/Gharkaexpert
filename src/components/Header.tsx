@@ -3,9 +3,11 @@ import {
   Languages, 
   ArrowLeftRight, 
   ChevronDown,
-  MessageSquare
+  MessageSquare,
+  Crown,
+  Sparkles
 } from 'lucide-react';
-import { Language, UserRole } from '../types';
+import { Language, UserRole, VipSubscriptionState } from '../types';
 import { LANGUAGES, t } from '../data/translations';
 
 interface HeaderProps {
@@ -19,6 +21,8 @@ interface HeaderProps {
   userPhoto?: string;
   onOpenInbox?: () => void;
   unreadCount?: number;
+  vipSubscription?: VipSubscriptionState;
+  onOpenVipPaywall?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -30,6 +34,8 @@ export const Header: React.FC<HeaderProps> = ({
   userPhoto,
   onOpenInbox,
   unreadCount = 0,
+  vipSubscription,
+  onOpenVipPaywall,
 }) => {
   const [showLangMenu, setShowLangMenu] = useState(false);
   const currentLangMeta = LANGUAGES.find((l) => l.code === currentLanguage) || LANGUAGES[0];
@@ -47,9 +53,16 @@ export const Header: React.FC<HeaderProps> = ({
               <h1 className="text-lg font-extrabold text-white leading-tight tracking-tight uppercase">
                 GharKaExpert
               </h1>
-              <span className="px-1.5 py-0.5 bg-blue-800 text-blue-100 border border-blue-500 rounded text-[10px] font-bold">
-                PRO
-              </span>
+              {vipSubscription?.isVipUser ? (
+                <span className="px-2 py-0.5 bg-gradient-to-r from-amber-400 to-yellow-300 text-slate-950 rounded-full text-[10px] font-black flex items-center gap-1 shadow-xs border border-amber-300">
+                  <Crown className="w-3 h-3 fill-slate-950" />
+                  VIP Member Active
+                </span>
+              ) : (
+                <span className="px-1.5 py-0.5 bg-blue-800 text-blue-100 border border-blue-500 rounded text-[10px] font-bold">
+                  PRO
+                </span>
+              )}
             </div>
             <p className="text-[11px] sm:text-xs text-blue-100 font-medium truncate tracking-tight">
               {t('tagline', currentLanguage)}
@@ -59,6 +72,26 @@ export const Header: React.FC<HeaderProps> = ({
 
         {/* Header Right Actions */}
         <div className="flex items-center gap-2">
+          {/* VIP Upgrade Pill Button */}
+          {vipSubscription?.isVipUser ? (
+            <button
+              onClick={onOpenVipPaywall}
+              className="py-1 px-2.5 bg-gradient-to-r from-amber-400 to-yellow-300 hover:from-amber-300 hover:to-yellow-200 text-slate-950 rounded-full text-xs font-black flex items-center gap-1 transition-all shadow-xs cursor-pointer active:scale-95"
+              title="VIP Member Active: No Full-Screen Interstitial Ads"
+            >
+              <Crown className="w-3.5 h-3.5 fill-slate-950" />
+              <span>VIP Member Active</span>
+            </button>
+          ) : (
+            <button
+              onClick={onOpenVipPaywall}
+              className="py-1 px-2.5 bg-gradient-to-r from-amber-400 via-yellow-300 to-amber-400 hover:from-amber-300 hover:to-yellow-200 text-slate-950 rounded-full text-xs font-black flex items-center gap-1 transition-all shadow-md cursor-pointer animate-pulse active:scale-95"
+              title="Upgrade to VIP: Remove all full-screen ads"
+            >
+              <Crown className="w-3.5 h-3.5 fill-slate-950" />
+              <span>Go VIP ₹99</span>
+            </button>
+          )}
           {/* Inbox / Chat Messages Button */}
           {onOpenInbox && (
             <button

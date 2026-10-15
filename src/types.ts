@@ -175,3 +175,32 @@ export interface Conversation {
   messages: ChatMessage[];
 }
 
+export type VipPlanTier = 'monthly' | 'yearly';
+export type PaymentMethodType = 'upi' | 'card' | 'netbanking' | 'wallet';
+
+export interface VipSubscriptionState {
+  isVipUser: boolean;
+  planType?: VipPlanTier; // 'monthly' | 'yearly'
+  planTier?: VipPlanTier; // backward compatibility
+  activatedAt?: string;
+  expiryDate?: string; // 30 days or 365 days from purchase
+  expiresAt?: string; // backward compatibility
+  pricePaid?: number;
+  paymentId?: string;
+  orderId?: string;
+  paymentMethod?: PaymentMethodType;
+  paymentGateway?: string;
+}
+
+export interface PaymentTransactionResult {
+  success: boolean;
+  paymentId?: string;
+  orderId?: string;
+  planType: VipPlanTier;
+  amount: number;
+  method: PaymentMethodType;
+  details?: string;
+  expiryDate: string;
+  error?: string;
+}
+
