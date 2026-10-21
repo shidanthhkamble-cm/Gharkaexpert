@@ -27,7 +27,8 @@ import {
   MapPin,
   History,
   Crown,
-  ShieldCheck
+  ShieldCheck,
+  UserX
 } from 'lucide-react';
 
 import { 
@@ -44,7 +45,8 @@ import {
   WorkerReview,
   VipPlanTier,
   VipSubscriptionState,
-  PaymentTransactionResult
+  PaymentTransactionResult,
+  UserAccountDocument
 } from './types';
 import { t, getCategoryLabel } from './data/translations';
 import { INITIAL_WORKERS, INITIAL_SUB_CONTRACTS } from './data/initialData';
@@ -74,6 +76,8 @@ import { admobService, ADMOB_CONFIG } from './services/admobService';
 import { VipPaywallModal } from './components/VipPaywallModal';
 import { PaymentCheckoutModal } from './components/PaymentCheckoutModal';
 import { PaymentService } from './services/paymentService';
+import { accountLifecycleService } from './services/accountLifecycleService';
+import { SoftDeleteAccountModal } from './components/SoftDeleteAccountModal';
 import { EmergencyDispatchModal } from './components/EmergencyDispatchModal';
 import { CategoryActionModal } from './components/CategoryActionModal';
 import { PostInspectionQuoteModal } from './components/PostInspectionQuoteModal';
@@ -100,12 +104,25 @@ export default function App() {
     phone: string;
     photoUrl: string;
     verified: boolean;
-  }>({
-    name: 'Ramesh Sharma',
-    phone: '+91 98765 43210',
-    photoUrl: 'https://images.unsplash.com/photo-1540569014015-19a7be504e3a?w=400&auto=format&fit=crop&q=80',
-    verified: true,
+  }>(() => {
+    const current = accountLifecycleService.getCurrentUser();
+    if (current && !current.isDeleted) {
+      return {
+        name: current.name,
+        phone: current.phoneNumber.startsWith('+91') ? current.phoneNumber : `+91 ${current.phoneNumber}`,
+        photoUrl: current.photoUrl,
+        verified: true,
+      };
+    }
+    return {
+      name: 'Ramesh Sharma',
+      phone: '+91 98765 43210',
+      photoUrl: 'https://images.unsplash.com/photo-1540569014015-19a7be504e3a?w=400&auto=format&fit=crop&q=80',
+      verified: true,
+    };
   });
+
+  const [showSoftDeleteModal, setShowSoftDeleteModal] = useState<boolean>(false);
 
   // VIP Subscription State (Monetization: Free vs VIP Tiered Model)
   const [vipSubscription, setVipSubscription] = useState<VipSubscriptionState>(() => {
@@ -506,6 +523,14 @@ export default function App() {
     aadhaarVerified?: boolean;
     aadhaarFrontUrl?: string;
     aadhaarBackUrl?: string;
+    restoredMessage?: string;
+    rating?: number;
+    reviewsCount?: number;
+    completedJobs?: number;
+    bio?: string;
+    dailyRate?: number;
+    visitingFee?: number;
+    vipSubscription?: VipSubscriptionState;
   }) => {
     setUserProfile({
       name: data.name,
@@ -515,38 +540,84 @@ export default function App() {
     });
     setCurrentRole(data.role);
 
+    // Save or update in persistent Firestore collection
+    accountLifecycleService.saveOrUpdateUser({
+      phoneNumber: data.phone,
+      name: data.name,
+      photoUrl: data.photoUrl,
+      role: data.role,
+      trade: data.trade,
+      experienceYears: data.experienceYears,
+      pincode: data.pincode,
+      aadhaarVerified: data.aadhaarVerified,
+      aadhaarFrontUrl: data.aadhaarFrontUrl,
+      aadhaarBackUrl: data.aadhaarBackUrl,
+      rating: data.rating,
+      reviewsCount: data.reviewsCount,
+      completedJobs: data.completedJobs,
+      bio: data.bio,
+      dailyRate: data.dailyRate,
+      visitingFee: data.visitingFee,
+      vipSubscription: data.vipSubscription,
+    });
+
+    if (data.vipSubscription) {
+      setVipSubscription(data.vipSubscription);
+      PaymentService.saveSubscription(data.vipSubscription);
+    }
+
+    if (data.restoredMessage) {
+      setAdminAlertMessage(data.restoredMessage);
+    }
+
     if (data.role === 'worker') {
       const newWorker: WorkerProfile = {
         id: `worker-my-${Date.now()}`,
         name: data.name,
         phone: data.phone,
-        aadhaarVerified: true,
+        aadhaarVerified: data.aadhaarVerified ?? true,
         aadhaarNumberMasked: '•••• •••• ' + data.phone.slice(-4),
         photoUrl: data.photoUrl,
         role: 'worker',
         primaryTrade: data.trade || 'electrician',
         pricingType: 'daily',
-        dailyRate: 750,
-        visitingFee: 299,
-        rating: 5.0,
-        reviewsCount: 1,
+        dailyRate: data.dailyRate || 750,
+        visitingFee: data.visitingFee || 299,
+        rating: data.rating || 5.0,
+        reviewsCount: data.reviewsCount || 1,
         experienceYears: data.experienceYears || 5,
         city: data.pincode ? `Area Pincode ${data.pincode}` : 'Mumbai',
         distanceKm: 0.5,
         isEmergencyAvailable: true,
         isAvailableToday: true,
-        bio: `Verified Karigar specializing in ${data.trade || 'repair'} work with ${data.experienceYears || 5} years experience. Pincode ${data.pincode || '400001'}.`,
+        bio: data.bio || `Verified Karigar specializing in ${data.trade || 'repair'} work with ${data.experienceYears || 5} years experience. Pincode ${data.pincode || '400001'}.`,
         languagesSpoken: ['Hindi', 'English'],
         portfolio: [],
-        completedJobs: 0,
+        completedJobs: data.completedJobs || 0,
         recentBookingCount: 0,
-        isNewKarigar: true,
+        isNewKarigar: !data.rating,
       };
-      setWorkersList(prev => [newWorker, ...prev.filter(w => w.id !== newWorker.id)]);
+      setWorkersList(prev => [newWorker, ...prev.filter(w => w.id !== newWorker.id && w.phone !== data.phone)]);
     }
 
     // Direct navigation to home screen upon OTP verification for customers or KYC completion for workers
     setOnboardingStep('home');
+  };
+
+  // Soft Delete Account Handler (Step 1 & 2: Update isDeleted: true, deletedAt: timestamp, and signOut)
+  const handleSoftDeleteAccount = async () => {
+    try {
+      const result = await accountLifecycleService.softDeleteAccount();
+      setShowSoftDeleteModal(false);
+      setAdminAlertMessage(
+        `🗑️ Account Soft-Deleted: Your past ratings & profile (${userProfile.name}) are safely preserved. Log back in with ${userProfile.phone} anytime to instantly restore your history!`
+      );
+      // Navigate to verification/login screen
+      setOnboardingStep('verification');
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Error soft-deleting account';
+      setAdminAlertMessage(msg);
+    }
   };
   const handleRoleProceed = () => setOnboardingStep('home');
 
@@ -857,7 +928,7 @@ export default function App() {
                         const loggedInWorker = workersList[0];
                         setEditingWorkerProfile(loggedInWorker);
                       }}
-                      className="p-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs flex items-center gap-1 font-bold shadow-xs"
+                      className="p-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs flex items-center gap-1 font-bold shadow-xs cursor-pointer"
                       title="Edit Rates & Profile"
                     >
                       <Edit className="w-3.5 h-3.5" />
@@ -865,9 +936,19 @@ export default function App() {
                     </button>
                   )}
 
+                  {/* Soft Delete Account & Sign Out Button */}
+                  <button
+                    onClick={() => setShowSoftDeleteModal(true)}
+                    className="p-2 bg-slate-800 hover:bg-rose-950 text-rose-300 hover:text-rose-200 rounded-xl text-xs flex items-center gap-1 font-bold border border-slate-700 hover:border-rose-700/60 transition-colors cursor-pointer"
+                    title="Soft Delete Account (Past history & ratings safely preserved)"
+                  >
+                    <UserX className="w-3.5 h-3.5 text-rose-400" />
+                    <span className="hidden sm:inline">Delete Account</span>
+                  </button>
+
                   <button
                     onClick={() => setOnboardingStep('language')}
-                    className="p-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl text-xs flex items-center gap-1 font-bold border border-slate-700"
+                    className="p-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl text-xs flex items-center gap-1 font-bold border border-slate-700 cursor-pointer"
                     title="Re-run Onboarding / Switch Language"
                   >
                     <RotateCcw className="w-3.5 h-3.5 text-amber-400" />
@@ -1483,6 +1564,7 @@ export default function App() {
                 onSave={(updatedWorker) => {
                   setWorkersList(prev => prev.map(w => w.id === updatedWorker.id ? updatedWorker : w));
                 }}
+                onOpenSoftDelete={() => setShowSoftDeleteModal(true)}
                 onClose={() => setEditingWorkerProfile(null)}
               />
             )}
@@ -1680,6 +1762,22 @@ export default function App() {
               onPaymentFailure={(error) => {
                 console.log('VIP Payment attempt cancelled or failed:', error);
               }}
+            />
+
+            {/* SOFT DELETE ACCOUNT MODAL */}
+            <SoftDeleteAccountModal
+              isOpen={showSoftDeleteModal}
+              onClose={() => setShowSoftDeleteModal(false)}
+              currentUser={{
+                name: userProfile.name,
+                phone: userProfile.phone,
+                photoUrl: userProfile.photoUrl,
+                role: currentRole,
+                rating: currentRole === 'worker' ? workersList[0]?.rating || 4.9 : 5.0,
+                reviewsCount: currentRole === 'worker' ? workersList[0]?.reviewsCount || 84 : 12,
+                completedJobs: currentRole === 'worker' ? workersList[0]?.completedJobs || 142 : undefined,
+              }}
+              onConfirmSoftDelete={handleSoftDeleteAccount}
             />
           </div>
         )}

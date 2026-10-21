@@ -204,3 +204,51 @@ export interface PaymentTransactionResult {
   error?: string;
 }
 
+export interface UserAccountDocument {
+  id: string;
+  phoneNumber: string;
+  name: string;
+  photoUrl: string;
+  role: UserRole;
+  isDeleted: boolean;
+  deletedAt?: string | null;
+  restoredAt?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  deviceId?: string;
+  lastDeviceId?: string;
+  isArchived?: boolean;
+  archivedAt?: string | null;
+  archiveReason?: string;
+  trade?: TradeCategory;
+  rating?: number;
+  reviewsCount?: number;
+  experienceYears?: number;
+  pincode?: string;
+  aadhaarVerified?: boolean;
+  aadhaarFrontUrl?: string;
+  aadhaarBackUrl?: string;
+  bio?: string;
+  dailyRate?: number;
+  visitingFee?: number;
+  vipSubscription?: VipSubscriptionState;
+  completedJobs?: number;
+}
+
+export type PhoneAuthCheckStatus = 
+  | 'existing_active' 
+  | 'restored' 
+  | 'security_prompt_required' 
+  | 'expired_new_owner' 
+  | 'new_user';
+
+export interface PhoneAuthCheckResult {
+  status: PhoneAuthCheckStatus;
+  message: string;
+  user?: UserAccountDocument;
+  daysSinceDeletion?: number;
+  previousAccountNameHint?: string;
+  deviceIdMatched?: boolean;
+  archivedPreviousUser?: UserAccountDocument;
+}
+

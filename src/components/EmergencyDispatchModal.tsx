@@ -17,7 +17,7 @@ import {
 } from 'lucide-react';
 import { WorkerProfile, TradeCategory, Language } from '../types';
 import { getCategoryLabel } from '../data/translations';
-import { getCategory3DIcon } from '../data/categoryIcons';
+import { getCategory3DIcon, getCategoryFallback3DIcon } from '../data/categoryIcons';
 
 interface EmergencyDispatchModalProps {
   category: TradeCategory;
@@ -129,6 +129,10 @@ export const EmergencyDispatchModal: React.FC<EmergencyDispatchModalProps> = ({
                 src={getCategory3DIcon(category)}
                 alt=""
                 referrerPolicy="no-referrer"
+                onError={(e) => {
+                  e.currentTarget.onerror = null;
+                  e.currentTarget.src = getCategoryFallback3DIcon(category);
+                }}
                 className="w-full h-full object-cover rounded-lg"
               />
             </div>

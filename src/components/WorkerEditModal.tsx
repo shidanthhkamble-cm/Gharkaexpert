@@ -19,12 +19,14 @@ interface WorkerEditModalProps {
   worker: WorkerProfile;
   onSave: (updatedWorker: WorkerProfile) => void;
   onClose: () => void;
+  onOpenSoftDelete?: () => void;
 }
 
 export const WorkerEditModal: React.FC<WorkerEditModalProps> = ({
   worker,
   onSave,
   onClose,
+  onOpenSoftDelete,
 }) => {
   const [dailyRate, setDailyRate] = useState(worker.dailyRate || 950);
   const [sqftRate, setSqftRate] = useState(worker.sqftRate || 25);
@@ -310,7 +312,7 @@ export const WorkerEditModal: React.FC<WorkerEditModalProps> = ({
         </div>
 
         {/* Footer */}
-        <div className="p-4 bg-slate-100 border-t border-slate-200 shrink-0">
+        <div className="p-4 bg-slate-100 border-t border-slate-200 shrink-0 space-y-2">
           <button
             type="button"
             onClick={handleSaveProfile}
@@ -319,6 +321,20 @@ export const WorkerEditModal: React.FC<WorkerEditModalProps> = ({
             <Save className="w-4 h-4" />
             <span>Save Profile & Rates</span>
           </button>
+
+          {onOpenSoftDelete && (
+            <button
+              type="button"
+              onClick={() => {
+                onClose();
+                onOpenSoftDelete();
+              }}
+              className="w-full py-2 text-rose-600 hover:text-rose-700 text-xs font-bold hover:bg-rose-50 rounded-xl transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              <span>Soft Delete Account (Preserves Past Ratings & History)</span>
+            </button>
+          )}
         </div>
       </motion.div>
     </div>

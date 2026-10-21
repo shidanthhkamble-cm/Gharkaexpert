@@ -5,7 +5,7 @@
  * and environment variable bindings for:
  * 1. Google Sign-In SDK (GIS / Google Identity Services)
  * 2. Truecaller 1-Click Verification SDK
- * 3. WhatsApp OTP API Gateway (Fast2SMS & MSG91)
+ * 3. Firebase Phone Authentication (6-Digit SMS OTP)
  */
 
 export interface GoogleAuthConfig {
@@ -34,13 +34,12 @@ export interface TruecallerSDKConfig {
   termsOfServiceUrl: string;
 }
 
-export interface WhatsAppGatewayConfig {
-  provider: 'Fast2SMS' | 'MSG91';
-  fast2SmsApiKey?: string;
-  fast2SmsSenderId?: string;
-  msg91AuthKey?: string;
-  msg91TemplateId?: string;
-  webhookDeliveryUrl?: string;
+export interface FirebasePhoneAuthConfig {
+  provider: 'Firebase Phone Authentication';
+  countryCode: string;
+  otpLength: number;
+  recaptchaContainerId: string;
+  recaptchaSize: 'invisible' | 'normal';
 }
 
 // Default Configuration Placeholders (configurable via environment or runtime)
@@ -54,11 +53,12 @@ export const AUTH_GATEWAY_CONFIG = {
     privacyPolicyUrl: 'https://gharkaexpert.in/privacy',
     termsOfServiceUrl: 'https://gharkaexpert.in/terms',
   },
-  whatsappGateway: {
-    provider: (import.meta.env.VITE_WHATSAPP_GATEWAY_PROVIDER as 'Fast2SMS' | 'MSG91') || 'Fast2SMS',
-    fast2SmsApiKey: import.meta.env.VITE_FAST2SMS_API_KEY || 'F2S_LIVE_API_KEY_PLACEHOLDER',
-    msg91AuthKey: import.meta.env.VITE_MSG91_AUTH_KEY || 'MSG91_AUTH_KEY_PLACEHOLDER',
-    msg91TemplateId: import.meta.env.VITE_MSG91_WHATSAPP_TEMPLATE_ID || 'gharkaexpert_otp_template_v1',
+  firebasePhoneAuth: {
+    provider: 'Firebase Phone Authentication' as const,
+    countryCode: '+91',
+    otpLength: 6,
+    recaptchaContainerId: 'firebase-recaptcha-container',
+    recaptchaSize: 'invisible' as const,
   }
 };
 

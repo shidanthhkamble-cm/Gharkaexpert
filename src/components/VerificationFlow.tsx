@@ -31,12 +31,17 @@ import {
   Loader2,
   Send,
   RotateCw,
+  RotateCcw,
+  Star,
+  UserCheck,
+  ShieldAlert
 } from 'lucide-react';
-import { Language, UserRole, TradeCategory } from '../types';
+import { Language, UserRole, TradeCategory, PhoneAuthCheckResult, VipSubscriptionState } from '../types';
 import { t } from '../data/translations';
-import { whatsAppOtpService } from '../services/whatsappOtpService';
+import { firebasePhoneAuthService } from '../services/firebasePhoneAuthService';
 import { googleAuthService } from '../services/authGateways';
 import { deviceCameraService } from '../services/capacitorDeviceService';
+import { accountLifecycleService } from '../services/accountLifecycleService';
 
 interface VerificationFlowProps {
   currentLanguage: Language;
@@ -52,6 +57,14 @@ interface VerificationFlowProps {
     aadhaarVerified?: boolean;
     aadhaarFrontUrl?: string;
     aadhaarBackUrl?: string;
+    restoredMessage?: string;
+    rating?: number;
+    reviewsCount?: number;
+    completedJobs?: number;
+    bio?: string;
+    dailyRate?: number;
+    visitingFee?: number;
+    vipSubscription?: VipSubscriptionState;
   }) => void;
   onCancel?: () => void;
 }
@@ -91,19 +104,18 @@ export const VerificationFlow: React.FC<VerificationFlowProps> = ({
   const [phone, setPhone] = useState('');
   const [otp, setOtp] = useState(['', '', '', '', '', '']);
 
-  // WhatsApp OTP Authentication Gateway State
-  const [isSendingWhatsAppOtp, setIsSendingWhatsAppOtp] = useState(false);
-  const [isVerifyingWhatsAppOtp, setIsVerifyingWhatsAppOtp] = useState(false);
-  const [whatsAppOtpError, setWhatsAppOtpError] = useState<string | null>(null);
-  const [whatsAppOtpSuccess, setWhatsAppOtpSuccess] = useState<string | null>(null);
+  // Firebase Phone Authentication State (Replacing Fast2SMS, MSG91 & WhatsApp OTP)
+  const [isSendingFirebaseOtp, setIsSendingFirebaseOtp] = useState(false);
+  const [isVerifyingFirebaseOtp, setIsVerifyingFirebaseOtp] = useState(false);
+  const [firebaseOtpError, setFirebaseOtpError] = useState<string | null>(null);
+  const [firebaseOtpSuccess, setFirebaseOtpSuccess] = useState<string | null>(null);
   const [resendCountdown, setResendCountdown] = useState(30);
   const [canResend, setCanResend] = useState(false);
-  const [lastDispatchedGateway, setLastDispatchedGateway] = useState<'Fast2SMS' | 'MSG91' | 'Standard SMS Gateway' | 'Truecaller 1-Click'>('Fast2SMS');
-  const [activeOtpChannel, setActiveOtpChannel] = useState<'whatsapp' | 'sms' | 'truecaller'>('whatsapp');
+  const [activeOtpChannel, setActiveOtpChannel] = useState<'firebase_sms' | 'truecaller'>('firebase_sms');
   const [isTruecallerVerifying, setIsTruecallerVerifying] = useState(false);
   const [isGoogleVerifying, setIsGoogleVerifying] = useState(false);
 
-  // 30-Second Countdown Timer for WhatsApp OTP Resend
+  // 30-Second Countdown Timer for Firebase SMS OTP Resend
   useEffect(() => {
     let timer: NodeJS.Timeout | null = null;
     if ((step === 'customer_otp' || step === 'worker_otp') && resendCountdown > 0) {
@@ -150,18 +162,349 @@ export const VerificationFlow: React.FC<VerificationFlowProps> = ({
   const frontFileInputRef = useRef<HTMLInputElement | null>(null);
   const backFileInputRef = useRef<HTMLInputElement | null>(null);
 
-  // Quick-fill helpers for seamless testing
+  // Firestore Soft-Delete and Account Restoration State
+  const [authCheckResult, setAuthCheckResult] = useState<PhoneAuthCheckResult | null>(null);
+  const [isCheckingAccount, setIsCheckingAccount] = useState(false);
+
+  // Automated Security Prompt State (Different Device verification & New Owner detection)
+  const [securityPromptName, setSecurityPromptName] = useState('');
+  const [securityPromptError, setSecurityPromptError] = useState<string | null>(null);
+  const [isVerifyingSecurityPrompt, setIsVerifyingSecurityPrompt] = useState(false);
+  const [securityPromptSuccess, setSecurityPromptSuccess] = useState<string | null>(null);
+
+  // Check phone number existence and soft-delete status whenever 10 digits are entered
+  useEffect(() => {
+    const clean = phone.replace(/\D/g, '').slice(-10);
+    if (clean.length === 10) {
+      setIsCheckingAccount(true);
+      setSecurityPromptName('');
+      setSecurityPromptError(null);
+      setSecurityPromptSuccess(null);
+      accountLifecycleService.handlePhoneLoginOrRegistration(clean).then((res) => {
+        setAuthCheckResult(res);
+        setIsCheckingAccount(false);
+      });
+    } else {
+      setAuthCheckResult(null);
+      setSecurityPromptName('');
+      setSecurityPromptError(null);
+      setSecurityPromptSuccess(null);
+    }
+  }, [phone]);
+
+  // Handle Automated Security Prompt Verification (Enter Previous Registered Name)
+  const handleVerifySecurityName = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!securityPromptName.trim()) {
+      setSecurityPromptError('Please enter your previous registered name.');
+      return;
+    }
+    setIsVerifyingSecurityPrompt(true);
+    setSecurityPromptError(null);
+    setSecurityPromptSuccess(null);
+    try {
+      const res = await accountLifecycleService.verifySecurityPromptAndRestore(phone, securityPromptName);
+      if (res.success && res.user) {
+        setSecurityPromptSuccess(res.message);
+        setAuthCheckResult({
+          status: 'restored',
+          message: res.message,
+          user: res.user,
+          deviceIdMatched: true,
+        });
+        confetti({
+          particleCount: 65,
+          spread: 75,
+          origin: { y: 0.6 },
+        });
+      } else {
+        setSecurityPromptError(res.message);
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Verification failed. Please retry.';
+      setSecurityPromptError(msg);
+    } finally {
+      setIsVerifyingSecurityPrompt(false);
+    }
+  };
+
+  // Handle New SIM Owner Claim: Archive old record and create fresh profile
+  const handleClaimAsNewSimOwner = async () => {
+    setIsVerifyingSecurityPrompt(true);
+    setSecurityPromptError(null);
+    try {
+      const res = await accountLifecycleService.claimAsNewSimOwnerAndArchive(phone, undefined, selectedRole);
+      if (res.success) {
+        setSecurityPromptSuccess('Previous owner record archived! Proceeding to setup your fresh profile.');
+        setAuthCheckResult({
+          status: 'new_user',
+          message: 'Previous account archived. Ready to setup your brand new profile as the new SIM owner!',
+        });
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Failed to archive old record.';
+      setSecurityPromptError(msg);
+    } finally {
+      setIsVerifyingSecurityPrompt(false);
+    }
+  };
+
+  // Quick-fill helpers for testing ALL Smart Restoration & New Owner paths:
   const handleQuickFillCustomer = () => {
-    setPhone('9876543210');
+    setPhone('9812345678'); // Active customer
   };
 
   const handleQuickFillWorker = () => {
-    setPhone('9812345678');
+    setPhone('9876543210'); // Active worker
     setFullName('Ramesh Sharma');
-    setPrimarySkill('electrician');
-    setExperienceYears(6);
+    setPrimarySkill('mason');
+    setExperienceYears(14);
     setPincode('400001');
   };
+
+  const handleQuickFillSoftDeletedSameDevice = () => {
+    // 1. Same Device ID -> Automatic instant restore
+    setPhone('9988776655');
+  };
+
+  const handleQuickFillSoftDeletedDiffDevice = () => {
+    // 2. Different Device ID -> Automated Security Prompt ("Anil Verma")
+    setPhone('9822334455');
+  };
+
+  const handleQuickFillSoftDeletedExpired = () => {
+    // 3. Deleted > 60 Days ago -> Auto-archived as recycled SIM, auto-creates fresh profile!
+    setPhone('9766554433');
+  };
+
+  // Reusable Smart Account Restoration & New Owner Detection Card
+  const renderSmartAccountStatusCard = () => {
+    if (isCheckingAccount) {
+      return (
+        <div className="p-3 bg-slate-100 rounded-xl flex items-center gap-2 text-xs text-slate-600 animate-pulse border border-slate-200">
+          <Loader2 className="w-4 h-4 animate-spin text-blue-600 shrink-0" />
+          <span>Verifying phone number & checking device security fingerprint in Firestore...</span>
+        </div>
+      );
+    }
+
+    if (!authCheckResult) return null;
+
+    if (authCheckResult.status === 'security_prompt_required') {
+      return (
+        <div className="p-3.5 rounded-xl border border-amber-300 bg-amber-50/95 text-xs space-y-2 animate-in fade-in duration-200 shadow-sm">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-1.5 font-bold text-amber-950">
+              <ShieldAlert className="w-4 h-4 text-amber-600 shrink-0" />
+              <span>Security Prompt: New Device Detected</span>
+            </div>
+            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-200 text-amber-900 shrink-0">
+              Deleted {authCheckResult.daysSinceDeletion || 0}d ago
+            </span>
+          </div>
+
+          <p className="text-[11px] text-amber-900 leading-snug">
+            A previously soft-deleted account was found on another device. To protect your ratings, history & private data, please verify your ownership or claim as a new SIM owner:
+          </p>
+
+          <div className="p-2.5 bg-white rounded-lg border border-amber-200 space-y-2">
+            <div className="flex items-center justify-between text-[11px]">
+              <span className="font-semibold text-slate-700">Registered Name:</span>
+              <span className="font-mono font-bold text-amber-800 bg-amber-100 px-2 py-0.5 rounded">
+                Hint: {authCheckResult.previousAccountNameHint || '*****'}
+              </span>
+            </div>
+
+            <div className="flex gap-1.5">
+              <input
+                type="text"
+                value={securityPromptName}
+                onChange={(e) => setSecurityPromptName(e.target.value)}
+                placeholder="Enter previous registered name"
+                className="flex-1 px-3 py-1.5 bg-slate-50 border border-slate-300 rounded-lg text-xs font-semibold text-slate-900 focus:outline-none focus:border-amber-600"
+              />
+              <button
+                type="button"
+                onClick={handleVerifySecurityName}
+                disabled={isVerifyingSecurityPrompt || !securityPromptName.trim()}
+                className="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs rounded-lg shadow-xs cursor-pointer disabled:opacity-50 flex items-center gap-1 shrink-0"
+              >
+                {isVerifyingSecurityPrompt ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <CheckCircle2 className="w-3.5 h-3.5" />
+                )}
+                <span>Verify & Restore</span>
+              </button>
+            </div>
+
+            {securityPromptError && (
+              <p className="text-[11px] text-rose-700 bg-rose-50 p-2 rounded-md border border-rose-200 font-medium leading-tight">
+                {securityPromptError}
+              </p>
+            )}
+
+            {securityPromptSuccess && (
+              <p className="text-[11px] text-emerald-800 bg-emerald-50 p-2 rounded-md border border-emerald-200 font-bold leading-tight">
+                ✓ {securityPromptSuccess}
+              </p>
+            )}
+
+            <div className="pt-1.5 border-t border-slate-100 flex items-center justify-between text-[11px]">
+              <span className="text-slate-500">New SIM owner?</span>
+              <button
+                type="button"
+                onClick={handleClaimAsNewSimOwner}
+                disabled={isVerifyingSecurityPrompt}
+                className="text-blue-700 hover:text-blue-800 font-bold underline cursor-pointer"
+              >
+                Claim as New SIM Owner (Fresh Profile)
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    if (authCheckResult.status === 'expired_new_owner') {
+      return (
+        <div className="p-3 rounded-xl border border-indigo-200 bg-indigo-50/95 text-xs space-y-1.5 animate-in fade-in duration-200">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-1.5 font-bold text-indigo-950">
+              <Sparkles className="w-4 h-4 text-indigo-600" />
+              <span>Telecom Recycled SIM Notice</span>
+            </div>
+            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-indigo-200 text-indigo-900">
+              {authCheckResult.daysSinceDeletion}d inactive (&gt;60d)
+            </span>
+          </div>
+          <p className="text-[11px] text-indigo-900 leading-snug">
+            {authCheckResult.message}
+          </p>
+          <div className="pt-1 border-t border-indigo-200/80 flex items-center gap-1 text-[11px] font-bold text-indigo-800">
+            <CheckCircle2 className="w-3.5 h-3.5 text-indigo-600" />
+            <span>Old record archived • Fresh profile initialized for new SIM owner</span>
+          </div>
+        </div>
+      );
+    }
+
+    if (authCheckResult.status === 'restored') {
+      return (
+        <div className="p-3 rounded-xl border border-emerald-300 bg-emerald-50/95 text-xs space-y-1.5 animate-in fade-in duration-200">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-1.5 font-bold text-emerald-950">
+              <RotateCcw className="w-4 h-4 text-emerald-600" />
+              <span>Account Restored (Same Device Verified)</span>
+            </div>
+            <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-emerald-200 text-emerald-900">
+              Device Match ✓
+            </span>
+          </div>
+          <p className="text-[11px] text-emerald-900 leading-snug">
+            {authCheckResult.message}
+          </p>
+          {authCheckResult.user && (
+            <div className="mt-1 pt-1 border-t border-emerald-200 text-[10px] text-emerald-900 flex items-center justify-between font-medium">
+              <span>Restoring Profile: <strong>{authCheckResult.user.name}</strong></span>
+              {authCheckResult.user.rating && (
+                <span className="font-bold flex items-center gap-0.5 text-amber-700">
+                  ★ {authCheckResult.user.rating} ({authCheckResult.user.reviewsCount} reviews)
+                </span>
+              )}
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    if (authCheckResult.status === 'existing_active') {
+      return (
+        <div className="p-3 rounded-xl border border-blue-200 bg-blue-50/90 text-xs space-y-1 animate-in fade-in duration-200">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-1.5 font-bold text-blue-950">
+              <CheckCircle2 className="w-4 h-4 text-blue-600" />
+              <span>Active Account Found</span>
+            </div>
+            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-200 text-blue-900">
+              Active User
+            </span>
+          </div>
+          <p className="text-[11px] text-blue-900 leading-snug">
+            {authCheckResult.message}
+          </p>
+        </div>
+      );
+    }
+
+    return (
+      <div className="p-2.5 rounded-xl border border-slate-200 bg-slate-50 text-xs flex items-center gap-2 text-slate-700 animate-in fade-in duration-200">
+        <Sparkles className="w-4 h-4 text-amber-500 shrink-0" />
+        <span className="text-[11px] leading-snug">{authCheckResult.message}</span>
+      </div>
+    );
+  };
+
+  // Reusable Quick Test Buttons across all 4 scenarios (Debug Mode only - !kReleaseMode equivalent)
+  const renderQuickTestButtons = (role: 'customer' | 'worker') => (
+    <div className="p-2.5 rounded-lg border border-green-600 bg-green-500/10 space-y-2">
+      <div className="flex items-center justify-between">
+        <span className="text-[12px] font-bold text-green-950 flex items-center gap-1.5">
+          <Zap className="w-3.5 h-3.5 text-green-700 fill-green-600" />
+          <span>⚡ TEST SMART RESTORATION SCENARIOS:</span>
+        </span>
+        <span className="text-[9px] font-mono font-bold bg-green-200/90 text-green-900 px-1.5 py-0.5 rounded">
+          !kReleaseMode
+        </span>
+      </div>
+      <div className="grid grid-cols-2 gap-1.5">
+        <button
+          type="button"
+          onClick={role === 'customer' ? handleQuickFillCustomer : handleQuickFillWorker}
+          className="text-[11px] p-2 bg-white/95 hover:bg-white text-slate-800 rounded-lg font-semibold text-left transition-colors cursor-pointer border border-green-200 shadow-xs"
+        >
+          <div className="font-bold text-slate-900">1. Active Account</div>
+          <div className="text-[10px] text-slate-500 truncate">{role === 'customer' ? '9812345678 (Priya)' : '9876543210 (Ramesh)'}</div>
+        </button>
+
+        <button
+          type="button"
+          onClick={handleQuickFillSoftDeletedSameDevice}
+          className="text-[11px] p-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-950 rounded-lg font-semibold text-left transition-colors cursor-pointer border border-emerald-300 shadow-xs"
+        >
+          <div className="font-bold text-emerald-900 flex items-center gap-1">
+            <RotateCcw className="w-3 h-3 text-emerald-600 shrink-0" />
+            <span className="truncate">2. Same Device</span>
+          </div>
+          <div className="text-[10px] text-emerald-700 truncate">9988776655 (Auto-Restore)</div>
+        </button>
+
+        <button
+          type="button"
+          onClick={handleQuickFillSoftDeletedDiffDevice}
+          className="text-[11px] p-2 bg-amber-50 hover:bg-amber-100 text-amber-950 rounded-lg font-semibold text-left transition-colors cursor-pointer border border-amber-300 shadow-xs"
+        >
+          <div className="font-bold text-amber-900 flex items-center gap-1">
+            <ShieldAlert className="w-3 h-3 text-amber-600 shrink-0" />
+            <span className="truncate">3. New Device</span>
+          </div>
+          <div className="text-[10px] text-amber-700 truncate">9822334455 (Name Prompt)</div>
+        </button>
+
+        <button
+          type="button"
+          onClick={handleQuickFillSoftDeletedExpired}
+          className="text-[11px] p-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-950 rounded-lg font-semibold text-left transition-colors cursor-pointer border border-indigo-300 shadow-xs"
+        >
+          <div className="font-bold text-indigo-900 flex items-center gap-1">
+            <Sparkles className="w-3 h-3 text-indigo-600 shrink-0" />
+            <span className="truncate">4. &gt;60d Recycled</span>
+          </div>
+          <div className="text-[10px] text-indigo-700 truncate">9766554433 (New Owner)</div>
+        </button>
+      </div>
+    </div>
+  );
 
   // Step 1: Handle Account Type Selection Continue
   const handleAccountTypeContinue = () => {
@@ -172,58 +515,37 @@ export const VerificationFlow: React.FC<VerificationFlowProps> = ({
     }
   };
 
-  // Send WhatsApp OTP via Fast2SMS / MSG91 API Gateway
-  const sendWhatsAppOtpCode = async (targetPhone: string, role: 'customer' | 'worker') => {
-    setIsSendingWhatsAppOtp(true);
-    setWhatsAppOtpError(null);
-    setWhatsAppOtpSuccess(null);
-    setActiveOtpChannel('whatsapp');
+  // Send 6-Digit SMS OTP via Firebase Phone Authentication
+  const sendFirebaseOtpCode = async (targetPhone: string, role: 'customer' | 'worker') => {
+    setIsSendingFirebaseOtp(true);
+    setFirebaseOtpError(null);
+    setFirebaseOtpSuccess(null);
+    setActiveOtpChannel('firebase_sms');
     try {
-      const resp = await whatsAppOtpService.sendWhatsAppOtp(targetPhone, role);
-      setLastDispatchedGateway(resp.gateway);
-      setWhatsAppOtpSuccess(`Verification code dispatched to your WhatsApp number via ${resp.gateway} Gateway.`);
+      const resp = await firebasePhoneAuthService.sendFirebaseSmsOtp(targetPhone, role);
+      setFirebaseOtpSuccess(`6-digit SMS verification code sent via Firebase Phone Authentication to +91 ${targetPhone}.`);
       setResendCountdown(30);
       setCanResend(false);
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Network timeout reaching WhatsApp API gateway. Please try again.';
-      setWhatsAppOtpError(msg);
+      const msg = err instanceof Error ? err.message : 'Error sending SMS OTP via Firebase. Please try again.';
+      setFirebaseOtpError(msg);
     } finally {
-      setIsSendingWhatsAppOtp(false);
-    }
-  };
-
-  // Fallback: Send Standard SMS OTP if WhatsApp unavailable
-  const sendSmsOtpFallback = async (role: 'customer' | 'worker') => {
-    setIsSendingWhatsAppOtp(true);
-    setWhatsAppOtpError(null);
-    setWhatsAppOtpSuccess(null);
-    try {
-      const resp = await whatsAppOtpService.sendFallbackSmsOtp(phone, role);
-      setActiveOtpChannel('sms');
-      setLastDispatchedGateway('Standard SMS Gateway');
-      setWhatsAppOtpSuccess(`SMS OTP dispatched directly to +91 ${phone} via Standard Telecom SMS.`);
-      setResendCountdown(30);
-      setCanResend(false);
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Failed to send SMS OTP. Please check phone number.';
-      setWhatsAppOtpError(msg);
-    } finally {
-      setIsSendingWhatsAppOtp(false);
+      setIsSendingFirebaseOtp(false);
     }
   };
 
   // 1-Click Login via Truecaller Verified SIM Handshake
   const handleTruecallerLogin = async (role: 'customer' | 'worker') => {
     if (phone.trim().length < 10) {
-      setWhatsAppOtpError('Please enter a valid 10-digit mobile number before using Truecaller 1-Click.');
+      setFirebaseOtpError('Please enter a valid 10-digit mobile number before using Truecaller 1-Click.');
       return;
     }
 
     setIsTruecallerVerifying(true);
-    setWhatsAppOtpError(null);
+    setFirebaseOtpError(null);
 
     try {
-      const resp = await whatsAppOtpService.verifyWithTruecaller(phone);
+      const resp = await firebasePhoneAuthService.verifyWithTruecaller(phone);
       if (resp.verified) {
         confetti({
           particleCount: 60,
@@ -246,10 +568,10 @@ export const VerificationFlow: React.FC<VerificationFlowProps> = ({
           setStep('worker_details');
         }
       } else {
-        setWhatsAppOtpError(resp.error || 'Truecaller 1-Click verification failed.');
+        setFirebaseOtpError(resp.error || 'Truecaller 1-Click verification failed.');
       }
     } catch {
-      setWhatsAppOtpError('Truecaller verification service timed out. Please use WhatsApp OTP.');
+      setFirebaseOtpError('Truecaller verification service timed out. Please use Firebase SMS OTP.');
     } finally {
       setIsTruecallerVerifying(false);
     }
@@ -258,7 +580,7 @@ export const VerificationFlow: React.FC<VerificationFlowProps> = ({
   // 1-Click Primary Customer Sign-In with Google
   const handleGoogleCustomerLogin = async () => {
     setIsGoogleVerifying(true);
-    setWhatsAppOtpError(null);
+    setFirebaseOtpError(null);
     try {
       const resp = await googleAuthService.signInWithGoogle();
       if (resp.success) {
@@ -279,102 +601,151 @@ export const VerificationFlow: React.FC<VerificationFlowProps> = ({
         }, 350);
       }
     } catch {
-      setWhatsAppOtpError('Google Sign-In was cancelled or timed out. You can use Phone / WhatsApp OTP.');
+      setFirebaseOtpError('Google Sign-In was cancelled or timed out. You can use Firebase SMS OTP.');
     } finally {
       setIsGoogleVerifying(false);
     }
   };
 
-  // Customer Phone Submit -> triggers WhatsApp OTP dispatch
+  // Customer Phone Submit -> triggers Firebase Phone Auth SMS dispatch
   const handleCustomerPhoneSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (phone.trim().length >= 10) {
       setOtp(['', '', '', '', '', '']);
       setStep('customer_otp');
-      await sendWhatsAppOtpCode(phone, 'customer');
+      await sendFirebaseOtpCode(phone, 'customer');
     }
   };
 
-  // Resend WhatsApp OTP
-  const handleResendWhatsAppOtp = async (role: 'customer' | 'worker') => {
-    if (!canResend || isSendingWhatsAppOtp) return;
+  // Resend Firebase 6-Digit SMS OTP
+  const handleResendFirebaseOtp = async (role: 'customer' | 'worker') => {
+    if (!canResend || isSendingFirebaseOtp) return;
     setOtp(['', '', '', '', '', '']);
-    await sendWhatsAppOtpCode(phone, role);
+    await sendFirebaseOtpCode(phone, role);
   };
 
-  // Customer OTP Verify -> Navigates DIRECTLY to Home Screen
+  // Customer OTP Verify -> Navigates DIRECTLY to Home Screen via Firebase Auth
   const handleCustomerOtpVerify = async (e: React.FormEvent) => {
     e.preventDefault();
     const enteredCode = otp.join('');
     if (enteredCode.length !== 6) {
-      setWhatsAppOtpError('Please enter the complete 6-digit WhatsApp code.');
+      setFirebaseOtpError('Please enter the complete 6-digit SMS code.');
       return;
     }
 
-    setIsVerifyingWhatsAppOtp(true);
-    setWhatsAppOtpError(null);
+    setIsVerifyingFirebaseOtp(true);
+    setFirebaseOtpError(null);
 
     try {
-      const result = await whatsAppOtpService.verifyWhatsAppOtp(phone, enteredCode);
+      const result = await firebasePhoneAuthService.verifyFirebaseSmsOtp(phone, enteredCode);
       if (result.verified) {
         confetti({
           particleCount: 50,
           spread: 60,
           origin: { y: 0.6 },
         });
-        // Direct Navigation to Home as Customer (No Aadhaar or documents collected)
+
+        const restoredUser = authCheckResult?.user;
+        const isRestored = authCheckResult?.status === 'restored';
+
         setTimeout(() => {
           onVerificationComplete({
-            name: 'Home Owner (Customer)',
+            name: restoredUser?.name || 'Home Owner (Customer)',
             phone: phone ? `+91 ${phone}` : '+91 98765 43210',
-            photoUrl: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=400&auto=format&fit=crop&q=80',
+            photoUrl: restoredUser?.photoUrl || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=400&auto=format&fit=crop&q=80',
             verified: true,
             role: 'customer',
+            restoredMessage: isRestored ? authCheckResult.message : undefined,
+            rating: restoredUser?.rating,
+            reviewsCount: restoredUser?.reviewsCount,
+            vipSubscription: restoredUser?.vipSubscription,
           });
         }, 400);
       } else {
-        setWhatsAppOtpError(result.error || 'Invalid 6-digit WhatsApp code. Please check WhatsApp.');
+        setFirebaseOtpError(result.error || 'Invalid 6-digit SMS code. Please check your messages.');
       }
     } catch {
-      setWhatsAppOtpError('Network timeout verifying code. Please check connection and retry.');
+      setFirebaseOtpError('Network timeout verifying Firebase code. Please check connection and retry.');
     } finally {
-      setIsVerifyingWhatsAppOtp(false);
+      setIsVerifyingFirebaseOtp(false);
     }
   };
 
-  // Worker Phone Submit -> triggers WhatsApp OTP dispatch
+  // Worker Phone Submit -> triggers Firebase Phone Auth SMS dispatch
   const handleWorkerPhoneSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (phone.trim().length >= 10) {
       setOtp(['', '', '', '', '', '']);
       setStep('worker_otp');
-      await sendWhatsAppOtpCode(phone, 'worker');
+      await sendFirebaseOtpCode(phone, 'worker');
     }
   };
 
-  // Worker OTP Verify -> Navigates to Worker Details Form
+  // Worker OTP Verify -> If account restored, directly restores full profile & history, else navigates to Details Form
   const handleWorkerOtpVerify = async (e: React.FormEvent) => {
     e.preventDefault();
     const enteredCode = otp.join('');
     if (enteredCode.length !== 6) {
-      setWhatsAppOtpError('Please enter the complete 6-digit WhatsApp code.');
+      setFirebaseOtpError('Please enter the complete 6-digit SMS code.');
       return;
     }
 
-    setIsVerifyingWhatsAppOtp(true);
-    setWhatsAppOtpError(null);
+    setIsVerifyingFirebaseOtp(true);
+    setFirebaseOtpError(null);
 
     try {
-      const result = await whatsAppOtpService.verifyWhatsAppOtp(phone, enteredCode);
+      const result = await firebasePhoneAuthService.verifyFirebaseSmsOtp(phone, enteredCode);
       if (result.verified) {
-        setStep('worker_details');
+        if (authCheckResult?.status === 'restored' && authCheckResult.user) {
+          // RESTORE PREVIOUSLY SOFT-DELETED ACCOUNT
+          // Brings back complete history, ratings, and profile!
+          confetti({
+            particleCount: 75,
+            spread: 80,
+            origin: { y: 0.6 },
+          });
+
+          const restoredWorker = authCheckResult.user;
+          setTimeout(() => {
+            onVerificationComplete({
+              name: restoredWorker.name,
+              phone: restoredWorker.phoneNumber.startsWith('+91') ? restoredWorker.phoneNumber : `+91 ${restoredWorker.phoneNumber}`,
+              photoUrl: restoredWorker.photoUrl,
+              verified: true,
+              role: restoredWorker.role || 'worker',
+              trade: restoredWorker.trade || 'electrician',
+              experienceYears: restoredWorker.experienceYears || 5,
+              pincode: restoredWorker.pincode || '400001',
+              aadhaarVerified: restoredWorker.aadhaarVerified ?? true,
+              aadhaarFrontUrl: restoredWorker.aadhaarFrontUrl,
+              aadhaarBackUrl: restoredWorker.aadhaarBackUrl,
+              restoredMessage: authCheckResult.message,
+              rating: restoredWorker.rating,
+              reviewsCount: restoredWorker.reviewsCount,
+              completedJobs: restoredWorker.completedJobs,
+              bio: restoredWorker.bio,
+              dailyRate: restoredWorker.dailyRate,
+              visitingFee: restoredWorker.visitingFee,
+              vipSubscription: restoredWorker.vipSubscription,
+            });
+          }, 350);
+        } else {
+          // If active user profile exists in Firestore, pre-fill
+          if (authCheckResult?.user) {
+            if (authCheckResult.user.name) setFullName(authCheckResult.user.name);
+            if (authCheckResult.user.trade) setPrimarySkill(authCheckResult.user.trade);
+            if (authCheckResult.user.experienceYears) setExperienceYears(authCheckResult.user.experienceYears);
+            if (authCheckResult.user.pincode) setPincode(authCheckResult.user.pincode);
+          }
+          setStep('worker_details');
+        }
       } else {
-        setWhatsAppOtpError(result.error || 'Invalid 6-digit WhatsApp code. Please check WhatsApp.');
+        setFirebaseOtpError(result.error || 'Invalid 6-digit SMS code. Please check your messages.');
       }
     } catch {
-      setWhatsAppOtpError('Network timeout verifying code. Please check connection and retry.');
+      setFirebaseOtpError('Network timeout verifying Firebase code. Please check connection and retry.');
     } finally {
-      setIsVerifyingWhatsAppOtp(false);
+      setIsVerifyingFirebaseOtp(false);
     }
   };
 
@@ -596,12 +967,12 @@ export const VerificationFlow: React.FC<VerificationFlowProps> = ({
                 setStep('account_type');
               } else if (step === 'customer_otp') {
                 setStep('customer_phone');
-                setWhatsAppOtpError(null);
-                setWhatsAppOtpSuccess(null);
+                setFirebaseOtpError(null);
+                setFirebaseOtpSuccess(null);
               } else if (step === 'worker_otp') {
                 setStep('worker_phone');
-                setWhatsAppOtpError(null);
-                setWhatsAppOtpSuccess(null);
+                setFirebaseOtpError(null);
+                setFirebaseOtpSuccess(null);
               } else if (step === 'worker_details') {
                 setStep('worker_otp');
               } else if (step === 'worker_kyc') {
@@ -685,8 +1056,8 @@ export const VerificationFlow: React.FC<VerificationFlowProps> = ({
                       Hire trusted local electricians, plumbers, masons & repair experts. Zero middlemen commission.
                     </p>
                     <div className="pt-1.5 flex flex-wrap gap-1.5">
-                      <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-emerald-100 text-emerald-900 rounded-md text-[10px] font-bold">
-                        💬 WhatsApp OTP Login
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-amber-100 text-amber-900 rounded-md text-[10px] font-bold">
+                        🔥 Firebase 6-Digit SMS OTP
                       </span>
                       <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-blue-100 text-blue-800 rounded-md text-[10px] font-bold">
                         ✓ No ID Documents Required
@@ -757,7 +1128,7 @@ export const VerificationFlow: React.FC<VerificationFlowProps> = ({
         )}
 
         {/* ========================================================================= */}
-        {/* 2. CUSTOMER FLOW: SIGN IN (PRIMARY: GOOGLE, SECONDARY: PHONE/WHATSAPP OTP) */}
+        {/* 2. CUSTOMER FLOW: SIGN IN (PRIMARY: GOOGLE, SECONDARY: FIREBASE SMS OTP) */}
         {/* ========================================================================= */}
         {step === 'customer_phone' && (
           <motion.div
@@ -791,7 +1162,7 @@ export const VerificationFlow: React.FC<VerificationFlowProps> = ({
                 type="button"
                 id="btn-customer-google-signin"
                 onClick={handleGoogleCustomerLogin}
-                disabled={isGoogleVerifying || isSendingWhatsAppOtp}
+                disabled={isGoogleVerifying || isSendingFirebaseOtp}
                 className="w-full py-3.5 px-4 bg-white hover:bg-slate-50 text-slate-800 border-2 border-slate-300 hover:border-slate-400 font-bold rounded-xl shadow-sm transition-all flex items-center justify-center gap-3 text-sm cursor-pointer disabled:opacity-50 relative group"
               >
                 {isGoogleVerifying ? (
@@ -838,11 +1209,11 @@ export const VerificationFlow: React.FC<VerificationFlowProps> = ({
               <div className="flex-grow border-t border-slate-200"></div>
             </div>
 
-            {/* SECONDARY OPTION: PHONE / WHATSAPP OTP */}
+            {/* SECONDARY OPTION: FIREBASE PHONE SMS OTP */}
             <form onSubmit={handleCustomerPhoneSubmit} className="space-y-3">
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  Mobile Number (for WhatsApp / SMS OTP)
+                  Mobile Number (for Firebase 6-Digit SMS OTP)
                 </label>
                 <div className="relative flex items-center">
                   <span className="absolute left-3.5 text-sm font-bold text-blue-700">
@@ -860,32 +1231,50 @@ export const VerificationFlow: React.FC<VerificationFlowProps> = ({
                 </div>
               </div>
 
-              <div className="flex items-center justify-between">
-                <button
-                  type="button"
-                  onClick={handleQuickFillCustomer}
-                  className="text-xs text-blue-700 font-bold underline hover:text-blue-800 cursor-pointer"
-                >
-                  ⚡ Auto-fill demo number (9876543210)
-                </button>
-              </div>
+              {/* Smart Account Restoration & New Owner Status Card */}
+              {renderSmartAccountStatusCard()}
 
+              {/* Quick Testing Helpers */}
+              {renderQuickTestButtons('customer')}
+
+              {/* 1. Send Firebase 6-Digit SMS OTP Button */}
               <button
                 type="submit"
-                id="btn-customer-whatsapp-otp"
-                disabled={phone.length < 10 || isSendingWhatsAppOtp || isGoogleVerifying}
-                className="w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl shadow-md transition-all flex items-center justify-center gap-2 text-sm disabled:opacity-50 cursor-pointer"
+                id="btn-customer-firebase-otp"
+                disabled={phone.length < 10 || isSendingFirebaseOtp || isGoogleVerifying || isTruecallerVerifying}
+                className="w-full py-3 bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold rounded-xl shadow-md transition-all flex items-center justify-center gap-2 text-sm disabled:opacity-50 cursor-pointer"
               >
-                {isSendingWhatsAppOtp ? (
+                {isSendingFirebaseOtp ? (
                   <>
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                    <span>Connecting WhatsApp Gateway...</span>
+                    <Loader2 className="w-4 h-4 animate-spin text-slate-950" />
+                    <span>Connecting Firebase Phone Auth...</span>
                   </>
                 ) : (
                   <>
-                    <MessageSquare className="w-4 h-4 text-emerald-100 fill-emerald-100/20" />
-                    <span>Continue with Phone / WhatsApp OTP</span>
+                    <Phone className="w-4 h-4 text-slate-950" />
+                    <span>Send 6-Digit SMS OTP (Firebase Auth)</span>
                     <ArrowRight className="w-4 h-4" />
+                  </>
+                )}
+              </button>
+
+              {/* 2. Truecaller 1-Click Login Button */}
+              <button
+                type="button"
+                id="btn-customer-truecaller-login"
+                onClick={() => handleTruecallerLogin('customer')}
+                disabled={phone.length < 10 || isTruecallerVerifying || isSendingFirebaseOtp}
+                className="w-full py-2.5 bg-sky-50 hover:bg-sky-100 text-sky-700 border border-sky-200 font-bold rounded-xl transition-all flex items-center justify-center gap-2 text-xs cursor-pointer disabled:opacity-50"
+              >
+                {isTruecallerVerifying ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin text-sky-600" />
+                    <span>Verifying with Truecaller 1-Click...</span>
+                  </>
+                ) : (
+                  <>
+                    <Zap className="w-3.5 h-3.5 fill-sky-600 text-sky-600" />
+                    <span>Truecaller 1-Click Login (Instant Verified SIM)</span>
                   </>
                 )}
               </button>
@@ -905,46 +1294,36 @@ export const VerificationFlow: React.FC<VerificationFlowProps> = ({
             className="space-y-4 my-auto"
           >
             <div className="text-center space-y-1.5">
-              <div className="w-14 h-14 bg-emerald-500 text-white rounded-2xl mx-auto flex items-center justify-center shadow-md shadow-emerald-200">
-                {activeOtpChannel === 'sms' ? (
-                  <Phone className="w-7 h-7 text-white" />
-                ) : (
-                  <MessageSquare className="w-7 h-7 fill-white/20" />
-                )}
+              <div className="w-14 h-14 bg-amber-500 text-slate-950 rounded-2xl mx-auto flex items-center justify-center shadow-md shadow-amber-200">
+                <Phone className="w-7 h-7 text-slate-950" />
               </div>
               <h3 className="text-xl font-bold text-slate-900">
-                {activeOtpChannel === 'sms' ? 'SMS Code Verification' : 'WhatsApp Verification'}
+                Firebase SMS Code Verification
               </h3>
               <p className="text-xs text-slate-600 font-medium">
-                {activeOtpChannel === 'sms'
-                  ? '6-digit SMS verification code sent to your number:'
-                  : '6-digit code sent to your WhatsApp number:'}
+                6-digit SMS verification code sent via Firebase Authentication to:
               </p>
-              <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-emerald-50 border border-emerald-200 rounded-full text-xs font-mono font-bold text-emerald-800">
-                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+              <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-amber-50 border border-amber-200 rounded-full text-xs font-mono font-bold text-amber-900">
+                <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse"></span>
                 <span>+91 {phone || '9876543210'}</span>
               </div>
             </div>
 
             {/* Success Dispatch Alert */}
-            {whatsAppOtpSuccess && !whatsAppOtpError && (
+            {firebaseOtpSuccess && !firebaseOtpError && (
               <div className="p-2.5 bg-emerald-50 border border-emerald-200 rounded-xl text-center text-xs text-emerald-800 font-medium flex items-center justify-center gap-1.5 animate-in fade-in duration-200">
                 <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                <span>
-                  {activeOtpChannel === 'sms'
-                    ? '6-digit code sent via SMS to your mobile number'
-                    : '6-digit code sent to your WhatsApp number'}
-                </span>
+                <span>{firebaseOtpSuccess}</span>
               </div>
             )}
 
             {/* Error or Timeout Alert */}
-            {whatsAppOtpError && (
+            {firebaseOtpError && (
               <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-left text-xs text-rose-800 font-medium flex items-start gap-2 animate-in fade-in duration-200">
                 <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
                 <div className="flex-1">
                   <p className="font-bold text-rose-900">Verification Alert</p>
-                  <p className="text-[11px] text-rose-700 leading-snug">{whatsAppOtpError}</p>
+                  <p className="text-[11px] text-rose-700 leading-snug">{firebaseOtpError}</p>
                 </div>
               </div>
             )}
@@ -965,8 +1344,8 @@ export const VerificationFlow: React.FC<VerificationFlowProps> = ({
                         e.target.nextElementSibling.focus();
                       }
                     }}
-                    className={`w-11 h-12 text-center text-xl font-bold font-mono bg-white border rounded-xl text-emerald-700 focus:outline-none focus:border-emerald-600 shadow-xs transition-colors ${
-                      whatsAppOtpError ? 'border-rose-300 ring-1 ring-rose-200' : 'border-slate-200'
+                    className={`w-11 h-12 text-center text-xl font-bold font-mono bg-white border rounded-xl text-amber-600 focus:outline-none focus:border-amber-500 shadow-xs transition-colors ${
+                      firebaseOtpError ? 'border-rose-300 ring-1 ring-rose-200' : 'border-slate-200'
                     }`}
                   />
                 ))}
@@ -975,70 +1354,45 @@ export const VerificationFlow: React.FC<VerificationFlowProps> = ({
               {/* Gateway & Delivery Info */}
               <div className="p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-center text-xs text-slate-600 font-medium flex items-center justify-center gap-1.5">
                 <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" />
-                <span>
-                  {activeOtpChannel === 'sms'
-                    ? 'Standard Telecom SMS Gateway (Fallback Active)'
-                    : 'Fast2SMS / MSG91 Official WhatsApp Gateway'}
-                </span>
+                <span>Firebase Phone Authentication • Direct 6-Digit SMS Delivery</span>
               </div>
 
               {/* 30-Second Countdown & Resend Button */}
               <div className="flex items-center justify-between text-xs px-1">
-                <span className="text-slate-500">Didn't receive code?</span>
+                <span className="text-slate-500">Didn't receive SMS?</span>
                 {canResend ? (
                   <div className="flex items-center gap-2">
                     <button
                       type="button"
-                      onClick={() => handleResendWhatsAppOtp('customer')}
-                      disabled={isSendingWhatsAppOtp}
-                      className="text-emerald-700 font-bold hover:text-emerald-800 flex items-center gap-1 cursor-pointer transition-colors"
+                      onClick={() => handleResendFirebaseOtp('customer')}
+                      disabled={isSendingFirebaseOtp}
+                      className="text-amber-700 font-bold hover:text-amber-800 flex items-center gap-1 cursor-pointer transition-colors"
                     >
-                      <RotateCw className={`w-3.5 h-3.5 ${isSendingWhatsAppOtp ? 'animate-spin' : ''}`} />
-                      <span>Resend OTP via WhatsApp</span>
-                    </button>
-                    <span className="text-slate-300">|</span>
-                    <button
-                      type="button"
-                      onClick={() => sendSmsOtpFallback('customer')}
-                      disabled={isSendingWhatsAppOtp}
-                      className="text-blue-700 font-bold hover:text-blue-800 cursor-pointer"
-                    >
-                      Via SMS
+                      <RotateCw className={`w-3.5 h-3.5 ${isSendingFirebaseOtp ? 'animate-spin' : ''}`} />
+                      <span>Resend SMS via Firebase</span>
                     </button>
                   </div>
                 ) : (
                   <span className="font-semibold text-slate-500 font-mono flex items-center gap-1">
                     <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-ping"></span>
-                    Resend OTP in <strong>{resendCountdown}s</strong>
+                    Resend SMS in <strong>{resendCountdown}s</strong>
                   </span>
                 )}
               </div>
 
-              {/* Secondary Fallback Trigger if WhatsApp is delayed */}
-              <div className="pt-0.5 flex justify-center">
-                <button
-                  type="button"
-                  onClick={() => sendSmsOtpFallback('customer')}
-                  disabled={isSendingWhatsAppOtp}
-                  className="text-[11px] text-slate-500 hover:text-blue-700 font-medium flex items-center gap-1 cursor-pointer"
-                >
-                  <span>WhatsApp unavailable? Send OTP via Standard SMS</span>
-                </button>
-              </div>
-
               <button
                 type="submit"
-                disabled={otp.join('').length !== 6 || isVerifyingWhatsAppOtp}
-                className="w-full py-3.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl shadow-md transition-all flex items-center justify-center gap-2 text-sm disabled:opacity-50 cursor-pointer"
+                disabled={otp.join('').length !== 6 || isVerifyingFirebaseOtp}
+                className="w-full py-3.5 bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold rounded-xl shadow-md transition-all flex items-center justify-center gap-2 text-sm disabled:opacity-50 cursor-pointer"
               >
-                {isVerifyingWhatsAppOtp ? (
+                {isVerifyingFirebaseOtp ? (
                   <>
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                    <span>Verifying {activeOtpChannel === 'sms' ? 'SMS Code' : 'with WhatsApp Gateway'}...</span>
+                    <Loader2 className="w-4 h-4 animate-spin text-slate-950" />
+                    <span>Verifying with Firebase Auth...</span>
                   </>
                 ) : (
                   <>
-                    <span>Verify OTP & Enter Home Screen 🚀</span>
+                    <span>Verify SMS Code & Enter Home Screen 🚀</span>
                     <ArrowRight className="w-4 h-4" />
                   </>
                 )}
@@ -1066,14 +1420,14 @@ export const VerificationFlow: React.FC<VerificationFlowProps> = ({
                 Karigar / Contractor Registration
               </h3>
               <p className="text-xs text-slate-500 font-normal">
-                Enter your WhatsApp mobile number for instant 6-digit OTP verification
+                Enter your mobile number for instant 6-digit SMS OTP verification via Firebase
               </p>
             </div>
 
             <form onSubmit={handleWorkerPhoneSubmit} className="space-y-4">
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  Mobile Number (for Customer Calls & WhatsApp) *
+                  Mobile Number (for Customer Calls & Firebase SMS) *
                 </label>
                 <div className="relative flex items-center">
                   <span className="absolute left-3.5 text-sm font-bold text-blue-700">
@@ -1091,28 +1445,27 @@ export const VerificationFlow: React.FC<VerificationFlowProps> = ({
                 </div>
               </div>
 
-              <button
-                type="button"
-                onClick={handleQuickFillWorker}
-                className="text-xs text-blue-700 font-bold underline hover:text-blue-800 cursor-pointer block"
-              >
-                ⚡ Click to auto-fill sample worker data
-              </button>
+              {/* Smart Account Restoration & New Owner Status Card */}
+              {renderSmartAccountStatusCard()}
+
+              {/* Quick Testing Helpers */}
+              {renderQuickTestButtons('worker')}
 
               <button
                 type="submit"
-                disabled={phone.length < 10 || isSendingWhatsAppOtp || isTruecallerVerifying}
-                className="w-full py-3.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl shadow-md transition-all flex items-center justify-center gap-2 text-sm disabled:opacity-50 cursor-pointer"
+                id="btn-worker-firebase-otp"
+                disabled={phone.length < 10 || isSendingFirebaseOtp || isTruecallerVerifying}
+                className="w-full py-3.5 bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold rounded-xl shadow-md transition-all flex items-center justify-center gap-2 text-sm disabled:opacity-50 cursor-pointer"
               >
-                {isSendingWhatsAppOtp ? (
+                {isSendingFirebaseOtp ? (
                   <>
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                    <span>Connecting WhatsApp Gateway...</span>
+                    <Loader2 className="w-4 h-4 animate-spin text-slate-950" />
+                    <span>Connecting Firebase Phone Auth...</span>
                   </>
                 ) : (
                   <>
-                    <MessageSquare className="w-4 h-4 text-emerald-100 fill-emerald-100/20" />
-                    <span>Send 6-Digit WhatsApp OTP</span>
+                    <Phone className="w-4 h-4 text-slate-950" />
+                    <span>Send 6-Digit SMS OTP (Firebase Auth)</span>
                     <ArrowRight className="w-4 h-4" />
                   </>
                 )}
@@ -1127,8 +1480,9 @@ export const VerificationFlow: React.FC<VerificationFlowProps> = ({
 
               <button
                 type="button"
+                id="btn-worker-truecaller-login"
                 onClick={() => handleTruecallerLogin('worker')}
-                disabled={isTruecallerVerifying || isSendingWhatsAppOtp}
+                disabled={isTruecallerVerifying || isSendingFirebaseOtp}
                 className="w-full py-2.5 bg-sky-50 hover:bg-sky-100 text-sky-700 border border-sky-200 font-bold rounded-xl transition-all flex items-center justify-center gap-2 text-xs cursor-pointer disabled:opacity-50"
               >
                 {isTruecallerVerifying ? (
@@ -1159,46 +1513,36 @@ export const VerificationFlow: React.FC<VerificationFlowProps> = ({
             className="space-y-4 my-auto"
           >
             <div className="text-center space-y-1.5">
-              <div className="w-14 h-14 bg-emerald-500 text-white rounded-2xl mx-auto flex items-center justify-center shadow-md shadow-emerald-200">
-                {activeOtpChannel === 'sms' ? (
-                  <Phone className="w-7 h-7 text-white" />
-                ) : (
-                  <MessageSquare className="w-7 h-7 fill-white/20" />
-                )}
+              <div className="w-14 h-14 bg-amber-500 text-slate-950 rounded-2xl mx-auto flex items-center justify-center shadow-md shadow-amber-200">
+                <Phone className="w-7 h-7 text-slate-950" />
               </div>
               <h3 className="text-xl font-bold text-slate-900">
-                {activeOtpChannel === 'sms' ? 'Worker SMS Verification' : 'Worker WhatsApp Verification'}
+                Worker Firebase SMS Verification
               </h3>
               <p className="text-xs text-slate-600 font-medium">
-                {activeOtpChannel === 'sms'
-                  ? '6-digit SMS verification code sent to your number:'
-                  : '6-digit code sent to your WhatsApp number:'}
+                6-digit SMS verification code sent via Firebase Authentication to:
               </p>
-              <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-emerald-50 border border-emerald-200 rounded-full text-xs font-mono font-bold text-emerald-800">
-                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+              <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-amber-50 border border-amber-200 rounded-full text-xs font-mono font-bold text-amber-900">
+                <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse"></span>
                 <span>+91 {phone || '9812345678'}</span>
               </div>
             </div>
 
             {/* Success Dispatch Alert */}
-            {whatsAppOtpSuccess && !whatsAppOtpError && (
+            {firebaseOtpSuccess && !firebaseOtpError && (
               <div className="p-2.5 bg-emerald-50 border border-emerald-200 rounded-xl text-center text-xs text-emerald-800 font-medium flex items-center justify-center gap-1.5 animate-in fade-in duration-200">
                 <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                <span>
-                  {activeOtpChannel === 'sms'
-                    ? '6-digit code sent via SMS to your mobile number'
-                    : '6-digit code sent to your WhatsApp number'}
-                </span>
+                <span>{firebaseOtpSuccess}</span>
               </div>
             )}
 
             {/* Error or Timeout Alert */}
-            {whatsAppOtpError && (
+            {firebaseOtpError && (
               <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-left text-xs text-rose-800 font-medium flex items-start gap-2 animate-in fade-in duration-200">
                 <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
                 <div className="flex-1">
                   <p className="font-bold text-rose-900">Verification Alert</p>
-                  <p className="text-[11px] text-rose-700 leading-snug">{whatsAppOtpError}</p>
+                  <p className="text-[11px] text-rose-700 leading-snug">{firebaseOtpError}</p>
                 </div>
               </div>
             )}
@@ -1219,8 +1563,8 @@ export const VerificationFlow: React.FC<VerificationFlowProps> = ({
                         e.target.nextElementSibling.focus();
                       }
                     }}
-                    className={`w-11 h-12 text-center text-xl font-bold font-mono bg-white border rounded-xl text-emerald-700 focus:outline-none focus:border-emerald-600 shadow-xs transition-colors ${
-                      whatsAppOtpError ? 'border-rose-300 ring-1 ring-rose-200' : 'border-slate-200'
+                    className={`w-11 h-12 text-center text-xl font-bold font-mono bg-white border rounded-xl text-amber-600 focus:outline-none focus:border-amber-500 shadow-xs transition-colors ${
+                      firebaseOtpError ? 'border-rose-300 ring-1 ring-rose-200' : 'border-slate-200'
                     }`}
                   />
                 ))}
@@ -1229,66 +1573,41 @@ export const VerificationFlow: React.FC<VerificationFlowProps> = ({
               {/* Gateway & Delivery Info */}
               <div className="p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-center text-xs text-slate-600 font-medium flex items-center justify-center gap-1.5">
                 <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" />
-                <span>
-                  {activeOtpChannel === 'sms'
-                    ? 'Standard Telecom SMS Gateway (Fallback Active)'
-                    : 'Fast2SMS / MSG91 Official WhatsApp Gateway'}
-                </span>
+                <span>Firebase Phone Authentication • Direct 6-Digit SMS Delivery</span>
               </div>
 
               {/* 30-Second Countdown & Resend Button */}
               <div className="flex items-center justify-between text-xs px-1">
-                <span className="text-slate-500">Didn't receive code?</span>
+                <span className="text-slate-500">Didn't receive SMS?</span>
                 {canResend ? (
                   <div className="flex items-center gap-2">
                     <button
                       type="button"
-                      onClick={() => handleResendWhatsAppOtp('worker')}
-                      disabled={isSendingWhatsAppOtp}
-                      className="text-emerald-700 font-bold hover:text-emerald-800 flex items-center gap-1 cursor-pointer transition-colors"
+                      onClick={() => handleResendFirebaseOtp('worker')}
+                      disabled={isSendingFirebaseOtp}
+                      className="text-amber-700 font-bold hover:text-amber-800 flex items-center gap-1 cursor-pointer transition-colors"
                     >
-                      <RotateCw className={`w-3.5 h-3.5 ${isSendingWhatsAppOtp ? 'animate-spin' : ''}`} />
-                      <span>Resend OTP via WhatsApp</span>
-                    </button>
-                    <span className="text-slate-300">|</span>
-                    <button
-                      type="button"
-                      onClick={() => sendSmsOtpFallback('worker')}
-                      disabled={isSendingWhatsAppOtp}
-                      className="text-blue-700 font-bold hover:text-blue-800 cursor-pointer"
-                    >
-                      Via SMS
+                      <RotateCw className={`w-3.5 h-3.5 ${isSendingFirebaseOtp ? 'animate-spin' : ''}`} />
+                      <span>Resend SMS via Firebase</span>
                     </button>
                   </div>
                 ) : (
                   <span className="font-semibold text-slate-500 font-mono flex items-center gap-1">
                     <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-ping"></span>
-                    Resend OTP in <strong>{resendCountdown}s</strong>
+                    Resend SMS in <strong>{resendCountdown}s</strong>
                   </span>
                 )}
               </div>
 
-              {/* Secondary Fallback Trigger if WhatsApp is delayed */}
-              <div className="pt-0.5 flex justify-center">
-                <button
-                  type="button"
-                  onClick={() => sendSmsOtpFallback('worker')}
-                  disabled={isSendingWhatsAppOtp}
-                  className="text-[11px] text-slate-500 hover:text-blue-700 font-medium flex items-center gap-1 cursor-pointer"
-                >
-                  <span>WhatsApp unavailable? Send OTP via Standard SMS</span>
-                </button>
-              </div>
-
               <button
                 type="submit"
-                disabled={otp.join('').length !== 6 || isVerifyingWhatsAppOtp}
-                className="w-full py-3.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl shadow-md transition-all flex items-center justify-center gap-2 text-sm disabled:opacity-50 cursor-pointer"
+                disabled={otp.join('').length !== 6 || isVerifyingFirebaseOtp}
+                className="w-full py-3.5 bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold rounded-xl shadow-md transition-all flex items-center justify-center gap-2 text-sm disabled:opacity-50 cursor-pointer"
               >
-                {isVerifyingWhatsAppOtp ? (
+                {isVerifyingFirebaseOtp ? (
                   <>
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                    <span>Verifying {activeOtpChannel === 'sms' ? 'SMS Code' : 'with WhatsApp Gateway'}...</span>
+                    <Loader2 className="w-4 h-4 animate-spin text-slate-950" />
+                    <span>Verifying with Firebase Auth...</span>
                   </>
                 ) : (
                   <>

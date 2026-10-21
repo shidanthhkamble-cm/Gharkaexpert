@@ -16,7 +16,7 @@ import {
 } from 'lucide-react';
 import { TradeCategory, Language } from '../types';
 import { getCategoryLabel } from '../data/translations';
-import { getCategory3DIcon } from '../data/categoryIcons';
+import { getCategory3DIcon, getCategoryFallback3DIcon } from '../data/categoryIcons';
 
 interface CategoryActionModalProps {
   isOpen: boolean;
@@ -58,6 +58,10 @@ export const CategoryActionModal: React.FC<CategoryActionModalProps> = ({
                   src={icon3dUrl}
                   alt={categoryLabel}
                   referrerPolicy="no-referrer"
+                  onError={(e) => {
+                    e.currentTarget.onerror = null;
+                    e.currentTarget.src = getCategoryFallback3DIcon(category);
+                  }}
                   className="w-full h-full object-cover rounded-xl shadow-xs"
                 />
               </div>

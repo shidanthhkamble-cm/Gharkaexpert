@@ -17,7 +17,7 @@ import {
 } from 'lucide-react';
 import { TradeCategory, Language } from '../types';
 import { getCategoryLabel } from '../data/translations';
-import { getCategory3DIcon } from '../data/categoryIcons';
+import { getCategory3DIcon, getCategoryFallback3DIcon } from '../data/categoryIcons';
 
 interface CategoryGridProps {
   selectedCategory: TradeCategory | 'all';
@@ -52,7 +52,7 @@ export const CATEGORIES: CategoryDef[] = [
   // Auto Mechanics
   { id: 'bike_mechanic', icon: Bike, color: 'text-orange-600', bg: 'bg-orange-50', section: 'auto', pricingType: 'visiting', tag: 'Roadside 24x7' },
   { id: 'car_mechanic', icon: Car, color: 'text-red-600', bg: 'bg-red-50', section: 'auto', pricingType: 'visiting', tag: 'Diagnostic Fee' },
-  { id: 'auto_mechanic', icon: Truck, color: 'text-teal-600', bg: 'bg-teal-50', section: 'auto', pricingType: 'visiting', tag: 'On-Spot Repair' },
+  { id: 'auto_mechanic', icon: Truck, color: 'text-amber-600', bg: 'bg-amber-50', section: 'auto', pricingType: 'visiting', tag: 'Auto Repair' },
   { id: 'truck_mechanic', icon: Truck, color: 'text-rose-700', bg: 'bg-rose-50', section: 'auto', pricingType: 'visiting', tag: 'Highway Breakdown' },
 ];
 
@@ -206,6 +206,10 @@ export const CategoryGrid: React.FC<CategoryGridProps> = ({
                   src={icon3dUrl}
                   alt={label}
                   referrerPolicy="no-referrer"
+                  onError={(e) => {
+                    e.currentTarget.onerror = null;
+                    e.currentTarget.src = getCategoryFallback3DIcon(cat.id);
+                  }}
                   className="w-full h-full object-cover rounded-lg shadow-2xs"
                 />
               </div>
