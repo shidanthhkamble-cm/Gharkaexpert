@@ -1,0 +1,18 @@
+{
+  "appId": "com.gharkaexpert.app",
+  "appName": "GharKaExpert",
+  "webDir": "dist",
+  "server": {
+    "androidScheme": "https"
+  },
+  "plugins": {
+    "Camera": {
+      "presentationStyle": "fullscreen",
+      "saveToGallery": false
+    },
+    "FirebaseAuthentication": {
+      "skipNativeAuth": false,
+      "providers": ["phone"]
+    }
+  }
+}

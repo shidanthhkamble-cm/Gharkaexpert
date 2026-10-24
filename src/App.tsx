@@ -1562,7 +1562,26 @@ export default function App() {
               <WorkerEditModal
                 worker={editingWorkerProfile}
                 onSave={(updatedWorker) => {
-                  setWorkersList(prev => prev.map(w => w.id === updatedWorker.id ? updatedWorker : w));
+                  setWorkersList((prev) =>
+                    prev.map((w) => (w.id === updatedWorker.id ? updatedWorker : w))
+                  );
+                  if (currentRole === 'worker') {
+                    setUserProfile((prev) => ({
+                      ...prev,
+                      photoUrl: updatedWorker.photoUrl || prev.photoUrl,
+                    }));
+                    accountLifecycleService.saveOrUpdateUser({
+                      phoneNumber: updatedWorker.phone || userProfile.phone,
+                      name: updatedWorker.name,
+                      photoUrl: updatedWorker.photoUrl,
+                      role: 'worker',
+                      trade: updatedWorker.primaryTrade,
+                      aadhaarVerified: updatedWorker.aadhaarVerified,
+                      bio: updatedWorker.bio,
+                      dailyRate: updatedWorker.dailyRate,
+                      visitingFee: updatedWorker.visitingFee,
+                    });
+                  }
                 }}
                 onOpenSoftDelete={() => setShowSoftDeleteModal(true)}
                 onClose={() => setEditingWorkerProfile(null)}

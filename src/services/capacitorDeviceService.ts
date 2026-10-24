@@ -1,87 +1,138 @@
-import { Camera, CameraResultType, CameraSource } from '@capacitor/camera';
+import { Capacitor } from '@capacitor/core';
+import { Camera, CameraDirection, CameraResultType, CameraSource } from '@capacitor/camera';
 import { Geolocation } from '@capacitor/geolocation';
 
+export interface CameraCaptureResult {
+  success: boolean;
+  dataUrl?: string;
+  cancelled?: boolean;
+  error?: string;
+}
+
 /**
- * Service to manage native device camera capture via @capacitor/camera
- * with fallback to web browser file/camera inputs.
+ * Native & Hybrid Camera Service powered by @capacitor/camera
+ * Configured for Aadhaar KYC Document Capture, Live Karigar Selfie, and Portfolio Photos.
  */
 export const deviceCameraService = {
   /**
-   * Captures an image using the native camera or photo library.
-   * Returns a base64 or data URL string.
+   * Ensures runtime camera & photo library permissions are granted on native Android/iOS
    */
-  async capturePhoto(source: CameraSource = CameraSource.Prompt): Promise<{ success: boolean; dataUrl?: string; error?: string }> {
-    try {
-      // Check permissions or request if supported
-      try {
-        const check = await Camera.checkPermissions();
-        if (check.camera !== 'granted') {
-          await Camera.requestPermissions({ permissions: ['camera', 'photos'] });
-        }
-      } catch {
-        // Ignore permission check errors on web browsers
+  async ensurePermissions(source: CameraSource): Promise<void> {
+    if (!Capacitor.isNativePlatform()) return;
+
+    const current = await Camera.checkPermissions();
+    const needsCamera =
+      (source === CameraSource.Camera || source === CameraSource.Prompt) &&
+      current.camera !== 'granted';
+    const needsPhotos =
+      (source === CameraSource.Photos || source === CameraSource.Prompt) &&
+      current.photos !== 'granted' &&
+      current.photos !== 'limited';
+
+    if (needsCamera || needsPhotos) {
+      const requested = await Camera.requestPermissions({
+        permissions: needsCamera && needsPhotos ? ['camera', 'photos'] : needsCamera ? ['camera'] : ['photos'],
+      });
+
+      if (source === CameraSource.Camera && requested.camera === 'denied') {
+        throw new Error('Camera permission was denied. Please enable Camera access in your phone Settings.');
       }
+      if (source === CameraSource.Photos && requested.photos === 'denied') {
+        throw new Error('Photo library permission was denied. Please enable Photos access in your phone Settings.');
+      }
+    }
+  },
+
+  /**
+   * Core Capacitor Camera capture method
+   */
+  async capturePhoto(
+    source: CameraSource = CameraSource.Camera,
+    direction: CameraDirection = CameraDirection.Rear,
+    headerLabel = 'Capture Photo'
+  ): Promise<CameraCaptureResult> {
+    try {
+      await this.ensurePermissions(source);
 
       const photo = await Camera.getPhoto({
-        quality: 90,
+        quality: 88,
+        width: 1280,
         allowEditing: false,
         resultType: CameraResultType.DataUrl,
         source,
+        direction,
         correctOrientation: true,
         saveToGallery: false,
-        promptLabelHeader: 'Aadhaar Document Photo',
-        promptLabelPhoto: 'Choose from Gallery / Files',
-        promptLabelPicture: 'Take Live Camera Photo',
+        webUseInput: false,
+        promptLabelHeader: headerLabel,
+        promptLabelPicture: 'Open Smartphone Camera',
+        promptLabelPhoto: 'Select from Gallery',
       });
 
       if (photo.dataUrl) {
         return { success: true, dataUrl: photo.dataUrl };
       }
-      return { success: false, error: 'No image data returned.' };
+
+      return { success: false, error: 'No photo data returned from camera.' };
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Camera dismissed or unavailable.';
-      return { success: false, error: message };
+      const msg = err instanceof Error ? err.message : String(err);
+      const lower = msg.toLowerCase();
+      if (
+        lower.includes('cancel') ||
+        lower.includes('dismiss') ||
+        lower.includes('user cancelled')
+      ) {
+        return { success: false, cancelled: true };
+      }
+      return { success: false, error: msg || 'Unable to access smartphone camera.' };
     }
   },
 
   /**
-   * Specifically take a live photo via device camera
+   * Directly launches the Rear Camera for Aadhaar Front/Back KYC cards and site work photos
    */
-  async takeCameraPhoto(): Promise<{ success: boolean; dataUrl?: string; error?: string }> {
-    return this.capturePhoto(CameraSource.Camera);
+  async captureDocumentPhoto(label = 'Aadhaar KYC Document'): Promise<CameraCaptureResult> {
+    return this.capturePhoto(CameraSource.Camera, CameraDirection.Rear, label);
   },
 
   /**
-   * Choose an image from device gallery / files
+   * Directly launches the Front Camera for Worker Live Profile Selfie
    */
-  async pickGalleryPhoto(): Promise<{ success: boolean; dataUrl?: string; error?: string }> {
-    return this.capturePhoto(CameraSource.Photos);
+  async captureSelfiePhoto(): Promise<CameraCaptureResult> {
+    return this.capturePhoto(CameraSource.Camera, CameraDirection.Front, 'Profile Selfie');
+  },
+
+  /**
+   * Launches rear camera by default
+   */
+  async takeCameraPhoto(): Promise<CameraCaptureResult> {
+    return this.capturePhoto(CameraSource.Camera, CameraDirection.Rear, 'Take Photo');
+  },
+
+  /**
+   * Opens the smartphone photo gallery / media picker
+   */
+  async pickGalleryPhoto(label = 'Select Photo'): Promise<CameraCaptureResult> {
+    return this.capturePhoto(CameraSource.Photos, CameraDirection.Rear, label);
   },
 };
 
 /**
- * Service to manage native GPS location via @capacitor/geolocation
- * with fallback to web navigator.geolocation.
+ * Native GPS Location Service via @capacitor/geolocation
  */
 export const deviceLocationService = {
-  /**
-   * Retrieves high-accuracy latitude & longitude from device GPS.
-   */
   async getCurrentPosition(): Promise<{
     latitude: number;
     longitude: number;
     accuracy?: number;
     source: 'capacitor_gps' | 'browser_gps' | 'default_fallback';
   }> {
-    // 1. Try Capacitor Geolocation Native API
     try {
-      try {
+      if (Capacitor.isNativePlatform()) {
         const perm = await Geolocation.checkPermissions();
         if (perm.location !== 'granted') {
           await Geolocation.requestPermissions({ permissions: ['location'] });
         }
-      } catch {
-        // On web capacitor can throw or silently continue
       }
 
       const position = await Geolocation.getCurrentPosition({
@@ -99,10 +150,9 @@ export const deviceLocationService = {
         };
       }
     } catch {
-      // Proceed to browser fallback
+      // Fallback to browser geolocation
     }
 
-    // 2. Fallback to standard browser navigator.geolocation
     if (typeof navigator !== 'undefined' && navigator.geolocation) {
       try {
         const browserPos = await new Promise<GeolocationPosition>((resolve, reject) => {
@@ -120,14 +170,13 @@ export const deviceLocationService = {
           source: 'browser_gps',
         };
       } catch {
-        // Fallback default
+        // Fallback default coordinates
       }
     }
 
-    // 3. Fallback default (e.g. Central Delhi / Connaught Place)
     return {
-      latitude: 28.6315,
-      longitude: 77.2167,
+      latitude: 19.076,
+      longitude: 72.8777,
       source: 'default_fallback',
     };
   },

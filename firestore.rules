@@ -1,0 +1,225 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 1. Global Default-Deny Safety Net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // 2. Hardened Global Primitives
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isVerifiedAuth() {
+      return isSignedIn() && (
+        (('phone_number' in request.auth.token) &&
+          request.auth.token.phone_number is string &&
+          request.auth.token.phone_number.size() >= 8 &&
+          request.auth.token.phone_number.size() <= 20) ||
+        (('email_verified' in request.auth.token) &&
+          request.auth.token.email_verified == true)
+      );
+    }
+
+    function isValidId(id) {
+      return id is string &&
+        id.size() >= 1 &&
+        id.size() <= 128 &&
+        id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    // 3. Entity Validation Blueprints
+    function isValidUserPublicProfile(data) {
+      return data.keys().hasAll([
+          'ownerId',
+          'name',
+          'role',
+          'aadhaarVerified',
+          'isDeleted',
+          'createdAt',
+          'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'ownerId',
+          'name',
+          'role',
+          'trade',
+          'pincode',
+          'aadhaarVerified',
+          'isDeleted',
+          'experienceYears',
+          'rating',
+          'reviewsCount',
+          'completedJobs',
+          'dailyRate',
+          'visitingFee',
+          'bio',
+          'createdAt',
+          'updatedAt'
+        ]) &&
+        data.ownerId is string &&
+        data.ownerId.size() >= 1 &&
+        data.ownerId.size() <= 128 &&
+        data.ownerId.matches('^[a-zA-Z0-9_\\-]+$') &&
+        data.ownerId == request.auth.uid &&
+        data.name is string &&
+        data.name.size() >= 1 &&
+        data.name.size() <= 100 &&
+        data.role is string &&
+        data.role.size() <= 20 &&
+        (data.role == 'customer' || data.role == 'worker') &&
+        data.aadhaarVerified is bool &&
+        data.isDeleted is bool &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp &&
+        (!('trade' in data) || (data.trade is string && data.trade.size() <= 40)) &&
+        (!('pincode' in data) || (data.pincode is string && data.pincode.size() <= 10)) &&
+        (!('experienceYears' in data) || (data.experienceYears is number && data.experienceYears >= 0 && data.experienceYears <= 60)) &&
+        (!('rating' in data) || (data.rating is number && data.rating >= 0 && data.rating <= 5)) &&
+        (!('reviewsCount' in data) || (data.reviewsCount is number && data.reviewsCount >= 0)) &&
+        (!('completedJobs' in data) || (data.completedJobs is number && data.completedJobs >= 0)) &&
+        (!('dailyRate' in data) || (data.dailyRate is number && data.dailyRate >= 0 && data.dailyRate <= 100000)) &&
+        (!('visitingFee' in data) || (data.visitingFee is number && data.visitingFee >= 0 && data.visitingFee <= 50000)) &&
+        (!('bio' in data) || (data.bio is string && data.bio.size() <= 500));
+    }
+
+    function isValidUserPrivateAccount(data) {
+      return data.keys().hasAll([
+          'ownerId',
+          'phoneNumber',
+          'deviceId',
+          'isDeleted',
+          'deletedAtIso',
+          'createdAt',
+          'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'ownerId',
+          'phoneNumber',
+          'deviceId',
+          'isDeleted',
+          'deletedAtIso',
+          'createdAt',
+          'updatedAt'
+        ]) &&
+        data.ownerId is string &&
+        data.ownerId.size() >= 1 &&
+        data.ownerId.size() <= 128 &&
+        data.ownerId.matches('^[a-zA-Z0-9_\\-]+$') &&
+        data.ownerId == request.auth.uid &&
+        data.phoneNumber is string &&
+        data.phoneNumber.size() >= 10 &&
+        data.phoneNumber.size() <= 20 &&
+        data.deviceId is string &&
+        data.deviceId.size() >= 1 &&
+        data.deviceId.size() <= 128 &&
+        data.isDeleted is bool &&
+        data.deletedAtIso is string &&
+        data.deletedAtIso.size() <= 40 &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    // 4. Public Profiles Collection (/users/{userId})
+    match /users/{userId} {
+      allow get: if isSignedIn() && isValidId(userId) && (
+        existing().ownerId == request.auth.uid || existing().isDeleted == false
+      );
+
+      allow list: if isSignedIn() && existing().ownerId == request.auth.uid;
+
+      allow create: if isVerifiedAuth() &&
+        isValidId(userId) &&
+        userId == request.auth.uid &&
+        isValidUserPublicProfile(incoming()) &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+
+      allow update: if isVerifiedAuth() &&
+        isValidId(userId) &&
+        userId == request.auth.uid &&
+        isValidUserPublicProfile(incoming()) &&
+        existing().ownerId == request.auth.uid &&
+        incoming().ownerId == existing().ownerId &&
+        incoming().role == existing().role &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time && (
+          // Action 1: Profile & Rate Update
+          incoming().diff(existing()).affectedKeys().hasOnly([
+            'name',
+            'trade',
+            'pincode',
+            'aadhaarVerified',
+            'experienceYears',
+            'rating',
+            'reviewsCount',
+            'completedJobs',
+            'dailyRate',
+            'visitingFee',
+            'bio',
+            'isDeleted',
+            'updatedAt'
+          ])
+        );
+
+      allow delete: if false;
+
+      // 5. Private PII & Lifecycle Subcollection (/users/{userId}/private/{docId})
+      match /private/{docId} {
+        allow get: if isVerifiedAuth() &&
+          isValidId(userId) &&
+          docId == 'account' &&
+          userId == request.auth.uid &&
+          exists(/databases/$(database)/documents/users/$(userId)) &&
+          get(/databases/$(database)/documents/users/$(userId)).data.ownerId == request.auth.uid;
+
+        allow list: if false;
+
+        allow create: if isVerifiedAuth() &&
+          isValidId(userId) &&
+          docId == 'account' &&
+          userId == request.auth.uid &&
+          isValidUserPrivateAccount(incoming()) &&
+          incoming().createdAt == request.time &&
+          incoming().updatedAt == request.time &&
+          (
+            exists(/databases/$(database)/documents/users/$(userId)) ||
+            existsAfter(/databases/$(database)/documents/users/$(userId))
+          );
+
+        allow update: if isVerifiedAuth() &&
+          isValidId(userId) &&
+          docId == 'account' &&
+          userId == request.auth.uid &&
+          isValidUserPrivateAccount(incoming()) &&
+          existing().ownerId == request.auth.uid &&
+          incoming().ownerId == existing().ownerId &&
+          incoming().createdAt == existing().createdAt &&
+          incoming().updatedAt == request.time &&
+          exists(/databases/$(database)/documents/users/$(userId)) &&
+          get(/databases/$(database)/documents/users/$(userId)).data.ownerId == request.auth.uid && (
+            // Action: Update Device or Soft-Delete Lifecycle State
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'phoneNumber',
+              'deviceId',
+              'isDeleted',
+              'deletedAtIso',
+              'updatedAt'
+            ])
+          );
+
+        allow delete: if false;
+      }
+    }
+  }
+}

@@ -1,164 +1,22 @@
-/**
- * Account Lifecycle Service (Smart Account Restoration & New Owner Detection)
- * 
- * Production implementation of Firestore-backed User Lifecycle & Recycled SIM Detection:
- * 1. softDeleteAccount(): Marks document as isDeleted: true, records deletedAt, and signs out.
- * 2. handlePhoneLoginOrRegistration(phoneNumber):
- *    - If document exists and isDeleted == true:
- *       a) Check if deletedAt > 60 days: Telecom SIM recycled window expired.
- *          -> Auto-archive old record into archive and treat as NEW owner!
- *       b) If <= 60 days:
- *          - If deviceId matches: Auto-restore immediately (same device).
- *          - If deviceId differs: Require Automated Security Prompt (Enter Previous Registered Name)
- *            or allow 1-click "I am a New SIM Owner (Fresh Profile)".
- *    - If verification matches: Set isDeleted: false, update deviceId, restore history & ratings.
- *    - If verification fails or user claims new SIM: Archive old record and create fresh profile.
- *    - If existing record with isDeleted == false: Active login.
- *    - If no document exists: Create normal new user profile.
- */
+import {
+  doc,
+  getDoc,
+  serverTimestamp,
+  writeBatch,
+  updateDoc,
+} from 'firebase/firestore';
+import { signOut } from 'firebase/auth';
+import { UserAccountDocument, PhoneAuthCheckResult } from '../types';
+import { auth, db, handleFirestoreError, OperationType } from './firebaseConfig';
 
-import { UserAccountDocument, PhoneAuthCheckResult, VipSubscriptionState } from '../types';
-
-const STORAGE_USERS_KEY = 'gharkaexpert_firestore_users';
-const STORAGE_ARCHIVED_KEY = 'gharkaexpert_archived_users';
-const STORAGE_CURRENT_USER_ID_KEY = 'gharkaexpert_current_uid';
-const STORAGE_DEVICE_ID_KEY = 'gharkaexpert_device_id';
-
-// Default mock current device ID
-const DEFAULT_CURRENT_DEVICE_ID = 'device_pixel8_mumbai_001';
-
-// Initial pre-seeded accounts demonstrating ALL lifecycle and new-owner paths
-const SEED_USERS: UserAccountDocument[] = [
-  {
-    id: 'user-ramesh-1',
-    phoneNumber: '9876543210',
-    name: 'Ramesh Sharma (Rajmistri)',
-    photoUrl: 'https://images.unsplash.com/photo-1540569014015-19a7be504e3a?w=400&auto=format&fit=crop&q=80',
-    role: 'worker',
-    isDeleted: false,
-    deletedAt: null,
-    restoredAt: null,
-    createdAt: '2026-01-15T09:30:00Z',
-    updatedAt: '2026-10-15T12:00:00Z',
-    deviceId: DEFAULT_CURRENT_DEVICE_ID,
-    trade: 'mason',
-    rating: 4.9,
-    reviewsCount: 84,
-    experienceYears: 14,
-    pincode: '400001',
-    aadhaarVerified: true,
-    bio: 'Experienced Rajmistri with 14 years in RCC construction, plastering, and marble flooring. 5-Star rated.',
-    dailyRate: 950,
-    visitingFee: 200,
-    completedJobs: 142,
-    vipSubscription: {
-      isVipUser: true,
-      planType: 'yearly',
-      planTier: 'yearly',
-      expiryDate: '2027-10-15T00:00:00.000Z',
-      pricePaid: 999,
-      paymentId: 'pay_init_seed_999'
-    }
-  },
-  {
-    id: 'user-priya-customer-2',
-    phoneNumber: '9812345678',
-    name: 'Priya Sharma (Home Owner)',
-    photoUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400&auto=format&fit=crop&q=80',
-    role: 'customer',
-    isDeleted: false,
-    deletedAt: null,
-    restoredAt: null,
-    createdAt: '2026-03-10T14:20:00Z',
-    updatedAt: '2026-09-20T10:00:00Z',
-    deviceId: DEFAULT_CURRENT_DEVICE_ID,
-    rating: 5.0,
-    reviewsCount: 12,
-    pincode: '400050',
-    vipSubscription: {
-      isVipUser: false
-    }
-  },
-  {
-    // Path 1: Soft-deleted 8 days ago on SAME device -> Instant Auto-Restoration!
-    id: 'user-soft-deleted-demo-3',
-    phoneNumber: '9988776655',
-    name: 'Suresh Kumar (Electrician)',
-    photoUrl: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=400&auto=format&fit=crop&q=80',
-    role: 'worker',
-    isDeleted: true,
-    // Soft-deleted 8 days ago
-    deletedAt: new Date(Date.now() - 8 * 24 * 60 * 60 * 1000).toISOString(),
-    restoredAt: null,
-    createdAt: '2025-11-01T08:00:00Z',
-    updatedAt: '2026-10-12T15:00:00Z',
-    deviceId: DEFAULT_CURRENT_DEVICE_ID, // SAME DEVICE!
-    trade: 'electrician',
-    rating: 4.85,
-    reviewsCount: 47,
-    experienceYears: 8,
-    pincode: '400064',
-    aadhaarVerified: true,
-    bio: 'Master Electrician. Soft-deleted on same device, verified automatically via device fingerprint!',
-    dailyRate: 850,
-    visitingFee: 250,
-    completedJobs: 68
-  },
-  {
-    // Path 2: Soft-deleted 15 days ago on DIFFERENT device -> Requires Automated Security Prompt or New Owner option!
-    id: 'user-soft-deleted-diff-device-4',
-    phoneNumber: '9822334455',
-    name: 'Anil Verma (Carpenter)',
-    photoUrl: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=400&auto=format&fit=crop&q=80',
-    role: 'worker',
-    isDeleted: true,
-    // Soft-deleted 15 days ago
-    deletedAt: new Date(Date.now() - 15 * 24 * 60 * 60 * 1000).toISOString(),
-    restoredAt: null,
-    createdAt: '2025-08-10T09:00:00Z',
-    updatedAt: '2026-10-05T11:00:00Z',
-    deviceId: 'device_samsung_galaxy_m32_delhi', // DIFFERENT DEVICE!
-    trade: 'carpenter',
-    rating: 4.8,
-    reviewsCount: 56,
-    experienceYears: 10,
-    pincode: '400072',
-    aadhaarVerified: true,
-    bio: 'Specialist in modular furniture and wood fittings. Registered on an old phone; requires security prompt to restore.',
-    dailyRate: 900,
-    visitingFee: 200,
-    completedJobs: 79
-  },
-  {
-    // Path 3: Soft-deleted 75 days ago (>60 days window) -> Auto-Archived as recycled SIM, auto-creates FRESH profile!
-    id: 'user-soft-deleted-expired-5',
-    phoneNumber: '9766554433',
-    name: 'Vikram Singh (Plumber - Telecom Recycled)',
-    photoUrl: 'https://images.unsplash.com/photo-1522075469751-3a6694fb2f61?w=400&auto=format&fit=crop&q=80',
-    role: 'worker',
-    isDeleted: true,
-    // Soft-deleted 75 days ago (> 60 days)
-    deletedAt: new Date(Date.now() - 75 * 24 * 60 * 60 * 1000).toISOString(),
-    restoredAt: null,
-    createdAt: '2024-05-12T10:00:00Z',
-    updatedAt: '2026-08-05T14:00:00Z',
-    deviceId: 'device_redmi_note_bangalore',
-    trade: 'plumber',
-    rating: 4.75,
-    reviewsCount: 39,
-    experienceYears: 7,
-    pincode: '400088',
-    aadhaarVerified: true,
-    bio: 'Past plumber account. Inactive over 60 days. Auto-detected as recycled SIM for new owner!',
-    dailyRate: 800,
-    visitingFee: 250,
-    completedJobs: 51
-  }
-];
+const STORAGE_USERS_KEY = 'gharkaexpert_users_v2';
+const STORAGE_ARCHIVED_KEY = 'gharkaexpert_archived_users_v2';
+const STORAGE_CURRENT_USER_ID_KEY = 'gharkaexpert_current_uid_v2';
+const STORAGE_DEVICE_ID_KEY = 'gharkaexpert_device_uuid_v2';
 
 class AccountLifecycleService {
   /**
-   * Helper to normalize 10-digit Indian phone numbers
+   * Normalizes phone number to 10-digit Indian mobile number
    */
   public normalizePhone(phone: string): string {
     const digitsOnly = phone.replace(/\D/g, '');
@@ -169,65 +27,54 @@ class AccountLifecycleService {
   }
 
   /**
-   * Device ID fingerprinting (stored in localStorage or generated)
+   * Generates and persists a unique cryptographic installation UUID for device matching
    */
   public getDeviceId(): string {
     try {
-      const stored = localStorage.getItem(STORAGE_DEVICE_ID_KEY);
-      if (stored) return stored;
-      localStorage.setItem(STORAGE_DEVICE_ID_KEY, DEFAULT_CURRENT_DEVICE_ID);
-      return DEFAULT_CURRENT_DEVICE_ID;
+      const existing = localStorage.getItem(STORAGE_DEVICE_ID_KEY);
+      if (existing) return existing;
+
+      const generated =
+        typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+          ? `dev_${crypto.randomUUID()}`
+          : `dev_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+      localStorage.setItem(STORAGE_DEVICE_ID_KEY, generated);
+      return generated;
     } catch {
-      return DEFAULT_CURRENT_DEVICE_ID;
+      return 'dev_runtime_session';
     }
   }
 
-  public setDeviceId(deviceId: string): void {
-    try {
-      localStorage.setItem(STORAGE_DEVICE_ID_KEY, deviceId);
-    } catch (e) {
-      console.warn('Error setting device ID:', e);
-    }
-  }
-
-  /**
-   * Get all user documents in collection 'users'
-   */
   public getUsersCollection(): UserAccountDocument[] {
     try {
       const stored = localStorage.getItem(STORAGE_USERS_KEY);
       if (stored) {
-        return JSON.parse(stored);
+        const parsed = JSON.parse(stored);
+        return Array.isArray(parsed) ? parsed : [];
       }
-    } catch (e) {
-      console.warn('Error reading users collection:', e);
+    } catch {
+      // Ignore storage read error
     }
-    this.saveUsersCollection(SEED_USERS);
-    return SEED_USERS;
+    return [];
   }
 
-  /**
-   * Save user documents to collection 'users'
-   */
   private saveUsersCollection(users: UserAccountDocument[]): void {
     try {
       localStorage.setItem(STORAGE_USERS_KEY, JSON.stringify(users));
-    } catch (e) {
-      console.warn('Error writing users collection:', e);
+    } catch {
+      // Ignore storage quota error
     }
   }
 
-  /**
-   * Get archived user accounts collection 'archived_users'
-   */
   public getArchivedUsersCollection(): UserAccountDocument[] {
     try {
       const stored = localStorage.getItem(STORAGE_ARCHIVED_KEY);
       if (stored) {
-        return JSON.parse(stored);
+        const parsed = JSON.parse(stored);
+        return Array.isArray(parsed) ? parsed : [];
       }
     } catch {
-      // ignore
+      // Ignore
     }
     return [];
   }
@@ -235,19 +82,19 @@ class AccountLifecycleService {
   private saveArchivedUsersCollection(archived: UserAccountDocument[]): void {
     try {
       localStorage.setItem(STORAGE_ARCHIVED_KEY, JSON.stringify(archived));
-    } catch (e) {
-      console.warn('Error saving archived users:', e);
+    } catch {
+      // Ignore
     }
   }
 
-  /**
-   * Current active user UID
-   */
   public getCurrentUserId(): string | null {
+    if (auth.currentUser?.uid) {
+      return auth.currentUser.uid;
+    }
     try {
-      return localStorage.getItem(STORAGE_CURRENT_USER_ID_KEY) || 'user-ramesh-1';
+      return localStorage.getItem(STORAGE_CURRENT_USER_ID_KEY);
     } catch {
-      return 'user-ramesh-1';
+      return null;
     }
   }
 
@@ -258,8 +105,8 @@ class AccountLifecycleService {
       } else {
         localStorage.removeItem(STORAGE_CURRENT_USER_ID_KEY);
       }
-    } catch (e) {
-      console.warn('Error saving current user ID:', e);
+    } catch {
+      // Ignore
     }
   }
 
@@ -267,23 +114,19 @@ class AccountLifecycleService {
     const uid = this.getCurrentUserId();
     if (!uid) return null;
     const users = this.getUsersCollection();
-    return users.find(u => u.id === uid) || null;
+    return users.find((u) => u.id === uid) || null;
   }
 
-  /**
-   * Generate privacy-safe name hint (e.g. "Anil Verma" -> "A*** V****")
-   */
   public generateMaskedNameHint(fullName: string): string {
     const parts = fullName.trim().split(/\s+/);
-    return parts.map(part => {
-      if (part.length <= 1) return part;
-      return part.charAt(0) + '*'.repeat(Math.min(part.length - 1, 4));
-    }).join(' ');
+    return parts
+      .map((part) => {
+        if (part.length <= 1) return part;
+        return part.charAt(0) + '*'.repeat(Math.min(part.length - 1, 4));
+      })
+      .join(' ');
   }
 
-  /**
-   * Calculate elapsed days since soft deletion
-   */
   public getDaysSinceDeletion(deletedAtIso: string): number {
     try {
       const deletedMs = new Date(deletedAtIso).getTime();
@@ -295,190 +138,370 @@ class AccountLifecycleService {
   }
 
   /**
-   * Step 1 & 2: Soft Delete Account
-   * Marks document with isDeleted: true and deletedAt timestamp, signs out user.
+   * Syncs public profile and owner-isolated PII lifecycle state to Cloud Firestore
+   * whenever an authenticated Firebase session is active.
    */
-  public async softDeleteAccount(userId?: string): Promise<{ success: boolean; message: string; deletedAt: string; user: UserAccountDocument }> {
+  public async syncAuthenticatedUserToFirestore(userDoc: UserAccountDocument): Promise<void> {
+    const currentUser = auth.currentUser;
+    if (!currentUser) return;
+
+    const uid = currentUser.uid;
+    const publicPath = `users/${uid}`;
+    const privatePath = `users/${uid}/private/account`;
+    const publicRef = doc(db, 'users', uid);
+    const privateRef = doc(db, 'users', uid, 'private', 'account');
+
+    const safeName = (userDoc.name || 'User').trim().slice(0, 100);
+    const safeRole = userDoc.role === 'worker' ? 'worker' : 'customer';
+    const safePhone = (currentUser.phoneNumber || `+91${this.normalizePhone(userDoc.phoneNumber)}`).slice(0, 20);
+    const safeDeviceId = (userDoc.deviceId || this.getDeviceId()).slice(0, 128);
+    const safeDeletedAt = userDoc.isDeleted && userDoc.deletedAt ? userDoc.deletedAt.slice(0, 40) : '';
+
+    let publicSnapExists = false;
+    try {
+      const existingSnap = await getDoc(publicRef);
+      publicSnapExists = existingSnap.exists();
+    } catch (error) {
+      if (error instanceof Error && error.message.includes('Missing or insufficient permissions')) {
+        handleFirestoreError(error, OperationType.GET, publicPath);
+      }
+      return;
+    }
+
+    const publicPayload: Record<string, unknown> = {
+      ownerId: uid,
+      name: safeName,
+      role: safeRole,
+      aadhaarVerified: Boolean(userDoc.aadhaarVerified),
+      isDeleted: Boolean(userDoc.isDeleted),
+      updatedAt: serverTimestamp(),
+    };
+
+    if (userDoc.trade) publicPayload.trade = String(userDoc.trade).slice(0, 40);
+    if (userDoc.pincode) publicPayload.pincode = String(userDoc.pincode).slice(0, 10);
+    if (typeof userDoc.experienceYears === 'number') {
+      publicPayload.experienceYears = Math.min(60, Math.max(0, userDoc.experienceYears));
+    }
+    if (typeof userDoc.rating === 'number') {
+      publicPayload.rating = Math.min(5, Math.max(0, userDoc.rating));
+    }
+    if (typeof userDoc.reviewsCount === 'number') {
+      publicPayload.reviewsCount = Math.max(0, userDoc.reviewsCount);
+    }
+    if (typeof userDoc.completedJobs === 'number') {
+      publicPayload.completedJobs = Math.max(0, userDoc.completedJobs);
+    }
+    if (typeof userDoc.dailyRate === 'number') {
+      publicPayload.dailyRate = Math.min(100000, Math.max(0, userDoc.dailyRate));
+    }
+    if (typeof userDoc.visitingFee === 'number') {
+      publicPayload.visitingFee = Math.min(50000, Math.max(0, userDoc.visitingFee));
+    }
+    if (userDoc.bio) {
+      publicPayload.bio = String(userDoc.bio).slice(0, 500);
+    }
+
+    try {
+      const batch = writeBatch(db);
+      if (!publicSnapExists) {
+        batch.set(publicRef, {
+          ...publicPayload,
+          createdAt: serverTimestamp(),
+        });
+        batch.set(privateRef, {
+          ownerId: uid,
+          phoneNumber: safePhone,
+          deviceId: safeDeviceId,
+          isDeleted: Boolean(userDoc.isDeleted),
+          deletedAtIso: safeDeletedAt,
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        });
+      } else {
+        const { ownerId: _o, role: _r, ...updatablePublic } = publicPayload;
+        batch.update(publicRef, updatablePublic);
+        batch.update(privateRef, {
+          phoneNumber: safePhone,
+          deviceId: safeDeviceId,
+          isDeleted: Boolean(userDoc.isDeleted),
+          deletedAtIso: safeDeletedAt,
+          updatedAt: serverTimestamp(),
+        });
+      }
+      await batch.commit();
+    } catch (error) {
+      if (error instanceof Error && error.message.includes('Missing or insufficient permissions')) {
+        handleFirestoreError(
+          error,
+          publicSnapExists ? OperationType.UPDATE : OperationType.CREATE,
+          `${publicPath} & ${privatePath}`
+        );
+      }
+    }
+  }
+
+  /**
+   * Soft-deletes the active user account in Firestore & local storage, then signs out of Firebase Auth
+   */
+  public async softDeleteAccount(userId?: string): Promise<{
+    success: boolean;
+    message: string;
+    deletedAt: string;
+    user?: UserAccountDocument;
+  }> {
     const targetId = userId || this.getCurrentUserId();
-    if (!targetId) {
-      throw new Error('No active user logged in to soft-delete.');
+    const timestamp = new Date().toISOString();
+
+    if (auth.currentUser) {
+      const uid = auth.currentUser.uid;
+      try {
+        await updateDoc(doc(db, 'users', uid), {
+          isDeleted: true,
+          updatedAt: serverTimestamp(),
+        });
+        await updateDoc(doc(db, 'users', uid, 'private', 'account'), {
+          isDeleted: true,
+          deletedAtIso: timestamp,
+          updatedAt: serverTimestamp(),
+        });
+      } catch (error) {
+        if (error instanceof Error && error.message.includes('Missing or insufficient permissions')) {
+          handleFirestoreError(error, OperationType.UPDATE, `users/${uid}`);
+        }
+      }
     }
 
     const users = this.getUsersCollection();
-    const userIndex = users.findIndex(u => u.id === targetId);
-
-    if (userIndex === -1) {
-      throw new Error('User record not found in Firestore collection.');
+    let updatedUser: UserAccountDocument | undefined;
+    if (targetId) {
+      const userIndex = users.findIndex((u) => u.id === targetId);
+      if (userIndex !== -1) {
+        updatedUser = {
+          ...users[userIndex],
+          isDeleted: true,
+          deletedAt: timestamp,
+          updatedAt: timestamp,
+        };
+        users[userIndex] = updatedUser;
+        this.saveUsersCollection(users);
+      }
     }
 
-    const timestamp = new Date().toISOString();
-    const updatedUser: UserAccountDocument = {
-      ...users[userIndex],
-      isDeleted: true,
-      deletedAt: timestamp,
-      updatedAt: timestamp,
-    };
+    try {
+      await signOut(auth);
+    } catch {
+      // Ignore signOut errors if offline
+    }
 
-    users[userIndex] = updatedUser;
-    this.saveUsersCollection(users);
-
-    // Sign out from Auth session
     this.setCurrentUserId(null);
 
-    console.log(`[AccountLifecycleService] Account soft-deleted for user ${targetId} at ${timestamp}`);
     return {
       success: true,
-      message: 'Account soft-deleted successfully. Your history, ratings, and profile are safely archived and can be restored anytime by logging in with your phone number.',
+      message:
+        'Account soft-deleted successfully. Your ratings and service history are safely preserved and can be restored by signing back in.',
       deletedAt: timestamp,
       user: updatedUser,
     };
   }
 
   /**
-   * Step 3, 4 & 5: Handle Phone Login or Registration with Smart Restoration & New Owner Detection
-   * 
-   * Requirement 1: Check Firestore for existing document with that phone number.
-   * Requirement 2: If account is Soft-Deleted (isDeleted: true):
-   *    - Check deviceId or ask for Automated Security Prompt (Enter Previous Registered Name).
-   *    - If Verification Matches (Same Device): Restore old account, profile, ratings, history.
-   *    - If Verification Fails or deletedAt is older than 60 days: Treat as NEW owner. Archive old record and auto-create FRESH profile.
-   * Requirement 3: If no existing document found, create normal NEW user account.
+   * Checks account restoration status for an authenticated or returning phone number
    */
   public async handlePhoneLoginOrRegistration(phoneNumber: string): Promise<PhoneAuthCheckResult> {
     const cleanPhone = this.normalizePhone(phoneNumber);
     if (cleanPhone.length < 10) {
       return {
         status: 'new_user',
-        message: 'Please enter a valid 10-digit mobile number.',
+        message: 'Enter a valid 10-digit mobile number.',
       };
+    }
+
+    // If Firebase Auth session is active, inspect Firestore private lifecycle record first
+    if (auth.currentUser) {
+      const uid = auth.currentUser.uid;
+      try {
+        const [pubSnap, privSnap] = await Promise.all([
+          getDoc(doc(db, 'users', uid)),
+          getDoc(doc(db, 'users', uid, 'private', 'account')),
+        ]);
+
+        if (pubSnap.exists() && privSnap.exists()) {
+          const pubData = pubSnap.data();
+          const privData = privSnap.data();
+
+          const mappedUser: UserAccountDocument = {
+            id: uid,
+            phoneNumber: cleanPhone,
+            name: String(pubData.name || 'Verified User'),
+            photoUrl: '',
+            role: pubData.role === 'worker' ? 'worker' : 'customer',
+            isDeleted: Boolean(privData.isDeleted),
+            deletedAt: privData.deletedAtIso ? String(privData.deletedAtIso) : null,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+            deviceId: String(privData.deviceId || ''),
+            trade: pubData.trade,
+            pincode: pubData.pincode,
+            aadhaarVerified: Boolean(pubData.aadhaarVerified),
+            experienceYears: pubData.experienceYears,
+            rating: pubData.rating,
+            reviewsCount: pubData.reviewsCount,
+            completedJobs: pubData.completedJobs,
+            dailyRate: pubData.dailyRate,
+            visitingFee: pubData.visitingFee,
+            bio: pubData.bio,
+          };
+
+          if (mappedUser.isDeleted && mappedUser.deletedAt) {
+            const days = this.getDaysSinceDeletion(mappedUser.deletedAt);
+            const currentDevice = this.getDeviceId();
+            if (days > 60) {
+              return {
+                status: 'expired_new_owner',
+                message: 'Previous inactive account archived. Setting up your fresh profile.',
+                daysSinceDeletion: days,
+              };
+            }
+            if (mappedUser.deviceId === currentDevice) {
+              return {
+                status: 'restored',
+                message: 'Welcome back! Your account and service history have been restored.',
+                user: mappedUser,
+                daysSinceDeletion: days,
+                deviceIdMatched: true,
+              };
+            }
+            return {
+              status: 'security_prompt_required',
+              message: 'Please confirm your previous registered name to restore your account.',
+              user: mappedUser,
+              daysSinceDeletion: days,
+              previousAccountNameHint: this.generateMaskedNameHint(mappedUser.name),
+              deviceIdMatched: false,
+            };
+          }
+
+          return {
+            status: 'existing_active',
+            message: 'Welcome back!',
+            user: mappedUser,
+          };
+        }
+      } catch {
+        // Proceed to local check if Firestore record doesn't exist yet
+      }
     }
 
     const users = this.getUsersCollection();
-    // Search active or soft-deleted record for this phone (excluding already archived records)
-    const existingIndex = users.findIndex(u => !u.isArchived && this.normalizePhone(u.phoneNumber) === cleanPhone);
+    const existingIndex = users.findIndex(
+      (u) => !u.isArchived && this.normalizePhone(u.phoneNumber) === cleanPhone
+    );
 
-    if (existingIndex !== -1) {
-      const userDoc = users[existingIndex];
-      const isDeleted = userDoc.isDeleted ?? false;
-
-      if (isDeleted) {
-        const deletedAt = userDoc.deletedAt || new Date().toISOString();
-        const daysSinceDeletion = this.getDaysSinceDeletion(deletedAt);
-        const currentDeviceId = this.getDeviceId();
-        const sameDevice = Boolean(userDoc.deviceId && userDoc.deviceId === currentDeviceId);
-
-        // Check Condition A: Deletion older than 60 days? (Telecom Recycled SIM Window)
-        if (daysSinceDeletion > 60) {
-          console.log(`[AccountLifecycleService] Soft-deleted account for ${cleanPhone} is ${daysSinceDeletion} days old (>60 days threshold). Treating as recycled SIM / NEW owner.`);
-          
-          // Archive old record
-          const archivedUser = this.archiveUserRecord(userDoc, 'telecom_recycled_sim_older_than_60_days');
-          
-          // Remove old document from active collection so phone number is free for new owner
-          const filteredUsers = users.filter(u => u.id !== userDoc.id);
-          this.saveUsersCollection(filteredUsers);
-
-          return {
-            status: 'expired_new_owner',
-            message: `Notice: This mobile number was inactive for ${daysSinceDeletion} days (>60 days). The previous account has been securely archived. We have initialized a fresh new profile for you as the new SIM owner!`,
-            daysSinceDeletion,
-            archivedPreviousUser: archivedUser,
-          };
-        }
-
-        // Check Condition B: Same Device ID match?
-        if (sameDevice) {
-          // Automatic Seamless Restoration without prompt!
-          const timestamp = new Date().toISOString();
-          const restoredUser: UserAccountDocument = {
-            ...userDoc,
-            isDeleted: false,
-            restoredAt: timestamp,
-            updatedAt: timestamp,
-            lastDeviceId: currentDeviceId,
-          };
-
-          users[existingIndex] = restoredUser;
-          this.saveUsersCollection(users);
-          this.setCurrentUserId(restoredUser.id);
-
-          console.log(`[AccountLifecycleService] Same Device detected (${currentDeviceId}). Auto-restoring account for ${cleanPhone} (${restoredUser.name})`);
-          return {
-            status: 'restored',
-            message: 'Same device recognized! Account restored successfully with previous history, ratings & profile.',
-            user: restoredUser,
-            daysSinceDeletion,
-            deviceIdMatched: true,
-          };
-        }
-
-        // Check Condition C: Different Device Detected & <= 60 days
-        // Security requirement: Must verify ownership via Automated Security Prompt (Name Match) OR allow claiming as New Owner
-        console.log(`[AccountLifecycleService] Soft-deleted account found on different device (${userDoc.deviceId} vs ${currentDeviceId}). Prompting automated security verification.`);
-        return {
-          status: 'security_prompt_required',
-          message: `A previously soft-deleted account was found for +91 ${cleanPhone} (deleted ${daysSinceDeletion} days ago). Because this is a new device, please verify ownership with your previous registered name or start fresh as the new SIM owner.`,
-          user: userDoc,
-          daysSinceDeletion,
-          previousAccountNameHint: this.generateMaskedNameHint(userDoc.name),
-          deviceIdMatched: false,
-        };
-      } else {
-        // Active account found
-        this.setCurrentUserId(userDoc.id);
-        console.log(`[AccountLifecycleService] Active user login for ${userDoc.phoneNumber}`);
-        return {
-          status: 'existing_active',
-          message: 'Welcome back! Logging into your active account.',
-          user: userDoc,
-        };
-      }
-    } else {
-      // Step 5: No previous record found, proceed to create a brand new profile
+    if (existingIndex === -1) {
       return {
         status: 'new_user',
-        message: 'New user detected. Please complete your profile setup.',
+        message: 'Proceeding with new account registration.',
       };
     }
+
+    const userDoc = users[existingIndex];
+    if (!userDoc.isDeleted) {
+      this.setCurrentUserId(userDoc.id);
+      return {
+        status: 'existing_active',
+        message: 'Welcome back!',
+        user: userDoc,
+      };
+    }
+
+    const deletedAt = userDoc.deletedAt || new Date().toISOString();
+    const daysSinceDeletion = this.getDaysSinceDeletion(deletedAt);
+    const currentDeviceId = this.getDeviceId();
+    const sameDevice = Boolean(userDoc.deviceId && userDoc.deviceId === currentDeviceId);
+
+    if (daysSinceDeletion > 60) {
+      const archivedUser = this.archiveUserRecord(
+        userDoc,
+        'telecom_recycled_sim_older_than_60_days'
+      );
+      this.saveUsersCollection(users.filter((u) => u.id !== userDoc.id));
+
+      return {
+        status: 'expired_new_owner',
+        message: 'Previous inactive account archived. Setting up your fresh profile.',
+        daysSinceDeletion,
+        archivedPreviousUser: archivedUser,
+      };
+    }
+
+    if (sameDevice) {
+      const timestamp = new Date().toISOString();
+      const restoredUser: UserAccountDocument = {
+        ...userDoc,
+        isDeleted: false,
+        restoredAt: timestamp,
+        updatedAt: timestamp,
+        lastDeviceId: currentDeviceId,
+      };
+
+      users[existingIndex] = restoredUser;
+      this.saveUsersCollection(users);
+      this.setCurrentUserId(restoredUser.id);
+
+      return {
+        status: 'restored',
+        message: 'Welcome back! Your account and service history have been restored.',
+        user: restoredUser,
+        daysSinceDeletion,
+        deviceIdMatched: true,
+      };
+    }
+
+    return {
+      status: 'security_prompt_required',
+      message: 'Please confirm your previous registered name to restore your account.',
+      user: userDoc,
+      daysSinceDeletion,
+      previousAccountNameHint: this.generateMaskedNameHint(userDoc.name),
+      deviceIdMatched: false,
+    };
   }
 
-  /**
-   * Automated Security Prompt Verification:
-   * Compares entered name with stored soft-deleted profile name.
-   * If matches: RESTORES account, updates deviceId to current device, returns restored profile.
-   * If fails: Returns error and prompts to claim as new owner.
-   */
-  public async verifySecurityPromptAndRestore(phoneNumber: string, enteredName: string): Promise<{
+  public async verifySecurityPromptAndRestore(
+    phoneNumber: string,
+    enteredName: string
+  ): Promise<{
     success: boolean;
     message: string;
     user?: UserAccountDocument;
   }> {
     const cleanPhone = this.normalizePhone(phoneNumber);
     const users = this.getUsersCollection();
-    const existingIndex = users.findIndex(u => !u.isArchived && this.normalizePhone(u.phoneNumber) === cleanPhone);
+    const existingIndex = users.findIndex(
+      (u) => !u.isArchived && this.normalizePhone(u.phoneNumber) === cleanPhone
+    );
 
     if (existingIndex === -1) {
-      return { success: false, message: 'No record found to verify.' };
+      return { success: false, message: 'No previous account record found.' };
     }
 
     const userDoc = users[existingIndex];
     if (!userDoc.isDeleted) {
-      return { success: true, message: 'Account is already active.', user: userDoc };
+      return { success: true, message: 'Account is active.', user: userDoc };
     }
 
-    // Clean comparison: strip punctuation, lowercase, check name parts
     const cleanStored = userDoc.name.toLowerCase().replace(/[^a-z0-9\s]/g, '').trim();
     const cleanInput = enteredName.toLowerCase().replace(/[^a-z0-9\s]/g, '').trim();
 
-    const storedTokens = cleanStored.split(/\s+/).filter(t => t.length > 2);
-    const inputTokens = cleanInput.split(/\s+/).filter(t => t.length > 2);
+    const storedTokens = cleanStored.split(/\s+/).filter((t) => t.length > 2);
+    const inputTokens = cleanInput.split(/\s+/).filter((t) => t.length > 2);
 
-    // Match if exact match or at least first/last name matches
-    const isDirectMatch = cleanStored.includes(cleanInput) || cleanInput.includes(cleanStored);
-    const hasTokenOverlap = storedTokens.some(token => inputTokens.includes(token));
-    const isVerified = isDirectMatch || hasTokenOverlap;
+    const isDirectMatch =
+      cleanInput.length >= 2 &&
+      (cleanStored.includes(cleanInput) || cleanInput.includes(cleanStored));
+    const hasTokenOverlap = storedTokens.some((token) => inputTokens.includes(token));
 
-    if (isVerified) {
+    if (isDirectMatch || hasTokenOverlap) {
       const timestamp = new Date().toISOString();
       const currentDeviceId = this.getDeviceId();
       const restoredUser: UserAccountDocument = {
@@ -493,50 +516,51 @@ class AccountLifecycleService {
       users[existingIndex] = restoredUser;
       this.saveUsersCollection(users);
       this.setCurrentUserId(restoredUser.id);
+      void this.syncAuthenticatedUserToFirestore(restoredUser);
 
-      console.log(`[AccountLifecycleService] Security verification passed for ${cleanPhone}. Restored: ${restoredUser.name}`);
       return {
         success: true,
-        message: 'Security verification successful! Your previous account, profile, ratings, and booking history have been completely restored.',
+        message: 'Ownership verified. Your account, ratings, and history have been restored.',
         user: restoredUser,
       };
-    } else {
-      console.warn(`[AccountLifecycleService] Security verification failed for ${cleanPhone}. Expected: ${userDoc.name}, Got: ${enteredName}`);
-      return {
-        success: false,
-        message: 'Security Verification Failed: The name entered does not match the previous registered account owner. If this SIM was recently reassigned or purchased by you, choose "New SIM Owner" to auto-archive the old record and create a fresh profile.',
-      };
     }
+
+    return {
+      success: false,
+      message:
+        'The entered name did not match the previous account holder. If this is your new number, select "Start Fresh Profile".',
+    };
   }
 
-  /**
-   * Archive old record and create a fresh profile for the new SIM owner.
-   * Completely automated without relying on customer support!
-   */
-  public async claimAsNewSimOwnerAndArchive(phoneNumber: string, newOwnerName?: string, role: 'customer' | 'worker' = 'customer'): Promise<{
+  public async claimAsNewSimOwnerAndArchive(
+    phoneNumber: string,
+    newOwnerName?: string,
+    role: 'customer' | 'worker' = 'customer'
+  ): Promise<{
     success: boolean;
     message: string;
     newUser: UserAccountDocument;
   }> {
     const cleanPhone = this.normalizePhone(phoneNumber);
     const users = this.getUsersCollection();
-    const existingIndex = users.findIndex(u => !u.isArchived && this.normalizePhone(u.phoneNumber) === cleanPhone);
+    const existingIndex = users.findIndex(
+      (u) => !u.isArchived && this.normalizePhone(u.phoneNumber) === cleanPhone
+    );
 
     if (existingIndex !== -1) {
       const oldDoc = users[existingIndex];
-      this.archiveUserRecord(oldDoc, 'claimed_by_new_sim_owner_automated');
-      // Remove previous document from active collection
+      this.archiveUserRecord(oldDoc, 'claimed_by_new_sim_owner');
       users.splice(existingIndex, 1);
     }
 
-    // Auto-create fresh profile for new owner
     const now = new Date().toISOString();
     const currentDeviceId = this.getDeviceId();
+    const uid = auth.currentUser?.uid || `user_${Date.now()}`;
     const freshUser: UserAccountDocument = {
-      id: `user-new-owner-${Date.now()}`,
+      id: uid,
       phoneNumber: cleanPhone,
-      name: newOwnerName || 'New SIM Owner',
-      photoUrl: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=400&auto=format&fit=crop&q=80',
+      name: newOwnerName || (role === 'worker' ? 'Verified Karigar' : 'Customer'),
+      photoUrl: '',
       role,
       isDeleted: false,
       deletedAt: null,
@@ -549,25 +573,21 @@ class AccountLifecycleService {
       reviewsCount: 0,
       completedJobs: 0,
       vipSubscription: {
-        isVipUser: false
-      }
+        isVipUser: false,
+      },
     };
 
     users.push(freshUser);
     this.saveUsersCollection(users);
     this.setCurrentUserId(freshUser.id);
 
-    console.log(`[AccountLifecycleService] Old account archived. Auto-created fresh profile for new owner of ${cleanPhone}`);
     return {
       success: true,
-      message: 'Old record safely archived. Your fresh profile has been created without customer support delay!',
+      message: 'Fresh profile initialized.',
       newUser: freshUser,
     };
   }
 
-  /**
-   * Internal helper to archive a user record into 'archived_users'
-   */
   private archiveUserRecord(userDoc: UserAccountDocument, reason: string): UserAccountDocument {
     const timestamp = new Date().toISOString();
     const archivedDoc: UserAccountDocument = {
@@ -575,7 +595,6 @@ class AccountLifecycleService {
       isArchived: true,
       archivedAt: timestamp,
       archiveReason: reason,
-      // Disassociate phone so future queries don't find it as active
       phoneNumber: `${userDoc.phoneNumber}_archived_${Date.now()}`,
       updatedAt: timestamp,
     };
@@ -587,37 +606,39 @@ class AccountLifecycleService {
     return archivedDoc;
   }
 
-  /**
-   * Save or update user document upon profile completion or verification
-   */
-  public saveOrUpdateUser(userData: Partial<UserAccountDocument> & { phoneNumber: string }): UserAccountDocument {
+  public saveOrUpdateUser(
+    userData: Partial<UserAccountDocument> & { phoneNumber: string }
+  ): UserAccountDocument {
     const cleanPhone = this.normalizePhone(userData.phoneNumber);
     const users = this.getUsersCollection();
-    const existingIndex = users.findIndex(u => !u.isArchived && this.normalizePhone(u.phoneNumber) === cleanPhone);
+    const existingIndex = users.findIndex(
+      (u) => !u.isArchived && this.normalizePhone(u.phoneNumber) === cleanPhone
+    );
 
     const now = new Date().toISOString();
     const currentDeviceId = this.getDeviceId();
+    const firebaseUid = auth.currentUser?.uid;
+
+    let savedDoc: UserAccountDocument;
 
     if (existingIndex !== -1) {
       const existing = users[existingIndex];
-      const updated: UserAccountDocument = {
+      savedDoc = {
         ...existing,
         ...userData,
+        id: firebaseUid || existing.id,
         isDeleted: false,
         deviceId: currentDeviceId,
         lastDeviceId: currentDeviceId,
         updatedAt: now,
       };
-      users[existingIndex] = updated;
-      this.saveUsersCollection(users);
-      this.setCurrentUserId(updated.id);
-      return updated;
+      users[existingIndex] = savedDoc;
     } else {
-      const newDoc: UserAccountDocument = {
-        id: `user-${Date.now()}`,
+      savedDoc = {
+        id: firebaseUid || `user_${Date.now()}`,
         phoneNumber: cleanPhone,
-        name: userData.name || 'New User',
-        photoUrl: userData.photoUrl || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=400&auto=format&fit=crop&q=80',
+        name: userData.name || 'Customer',
+        photoUrl: userData.photoUrl || '',
         role: userData.role || 'customer',
         isDeleted: false,
         deletedAt: null,
@@ -630,7 +651,7 @@ class AccountLifecycleService {
         rating: userData.rating || 5.0,
         reviewsCount: userData.reviewsCount || 0,
         experienceYears: userData.experienceYears || 5,
-        pincode: userData.pincode || '400001',
+        pincode: userData.pincode || '',
         aadhaarVerified: userData.aadhaarVerified || false,
         aadhaarFrontUrl: userData.aadhaarFrontUrl,
         aadhaarBackUrl: userData.aadhaarBackUrl,
@@ -640,21 +661,14 @@ class AccountLifecycleService {
         vipSubscription: userData.vipSubscription,
         completedJobs: userData.completedJobs || 0,
       };
-      users.push(newDoc);
-      this.saveUsersCollection(users);
-      this.setCurrentUserId(newDoc.id);
-      return newDoc;
+      users.push(savedDoc);
     }
-  }
 
-  /**
-   * Reset database back to default seed for testing
-   */
-  public resetToDefaultSeed(): void {
-    this.saveUsersCollection(SEED_USERS);
-    this.saveArchivedUsersCollection([]);
-    this.setDeviceId(DEFAULT_CURRENT_DEVICE_ID);
-    this.setCurrentUserId('user-ramesh-1');
+    this.saveUsersCollection(users);
+    this.setCurrentUserId(savedDoc.id);
+    void this.syncAuthenticatedUserToFirestore(savedDoc);
+
+    return savedDoc;
   }
 }
 

@@ -1,20 +1,75 @@
 import { initializeApp, getApps, getApp, FirebaseApp } from 'firebase/app';
 import { getAuth, Auth } from 'firebase/auth';
+import { getFirestore, Firestore, doc, getDocFromServer } from 'firebase/firestore';
+import firebaseAppletConfig from '../../firebase-applet-config.json';
 
-/**
- * Firebase Client Configuration for GharKaExpert
- * 
- * Powered by Firebase Phone Authentication for 6-Digit SMS OTP
- */
-export const firebaseConfig = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || 'AIzaSyA8_GharKaExpertPhoneAuthKey_Demo2026',
-  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || 'gharkaexpert-app.firebaseapp.com',
-  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || 'gharkaexpert-app',
-  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || 'gharkaexpert-app.appspot.com',
-  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || '800366909295',
-  appId: import.meta.env.VITE_FIREBASE_APP_ID || '1:800366909295:web:gharkaexpertphoneauth',
-};
+export const app: FirebaseApp =
+  getApps().length === 0 ? initializeApp(firebaseAppletConfig) : getApp();
 
-// Singleton App & Auth instances
-export const app: FirebaseApp = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
+export const db: Firestore = getFirestore(app, firebaseAppletConfig.firestoreDatabaseId);
 export const auth: Auth = getAuth(app);
+auth.useDeviceLanguage();
+
+export enum OperationType {
+  CREATE = 'create',
+  UPDATE = 'update',
+  DELETE = 'delete',
+  LIST = 'list',
+  GET = 'get',
+  WRITE = 'write',
+}
+
+export interface FirestoreErrorInfo {
+  error: string;
+  operationType: OperationType;
+  path: string | null;
+  authInfo: {
+    userId?: string | null;
+    email?: string | null;
+    emailVerified?: boolean | null;
+    isAnonymous?: boolean | null;
+    tenantId?: string | null;
+    providerInfo?: {
+      providerId?: string | null;
+      email?: string | null;
+    }[];
+  };
+}
+
+export function handleFirestoreError(
+  error: unknown,
+  operationType: OperationType,
+  path: string | null
+): never {
+  const errInfo: FirestoreErrorInfo = {
+    error: error instanceof Error ? error.message : String(error),
+    authInfo: {
+      userId: auth.currentUser?.uid,
+      email: auth.currentUser?.email,
+      emailVerified: auth.currentUser?.emailVerified,
+      isAnonymous: auth.currentUser?.isAnonymous,
+      tenantId: auth.currentUser?.tenantId,
+      providerInfo:
+        auth.currentUser?.providerData?.map((provider) => ({
+          providerId: provider.providerId,
+          email: provider.email,
+        })) || [],
+    },
+    operationType,
+    path,
+  };
+  console.error('Firestore Error: ', JSON.stringify(errInfo));
+  throw new Error(JSON.stringify(errInfo));
+}
+
+async function testConnection(): Promise<void> {
+  try {
+    await getDocFromServer(doc(db, 'test', 'connection'));
+  } catch (error) {
+    if (error instanceof Error && error.message.includes('the client is offline')) {
+      console.error('Please check your Firebase configuration.');
+    }
+  }
+}
+
+void testConnection();

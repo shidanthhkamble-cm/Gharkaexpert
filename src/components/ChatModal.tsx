@@ -19,7 +19,7 @@ import {
 } from 'lucide-react';
 import { WorkerProfile, ChatMessage, Language } from '../types';
 import { t, getCategoryLabel } from '../data/translations';
-import { SAMPLE_SITE_IMAGES } from '../data/initialChats';
+import { deviceCameraService } from '../services/capacitorDeviceService';
 
 interface ChatModalProps {
   worker: WorkerProfile;
@@ -44,11 +44,11 @@ export const ChatModal: React.FC<ChatModalProps> = ({
   const [autoTranslate, setAutoTranslate] = useState(true);
   const [showImagePicker, setShowImagePicker] = useState(false);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
-  const [customImageUrl, setCustomImageUrl] = useState('');
   const [isTyping, setIsTyping] = useState(false);
   const [zoomImage, setZoomImage] = useState<string | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const chatPhotoInputRef = useRef<HTMLInputElement | null>(null);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -75,7 +75,6 @@ export const ChatModal: React.FC<ChatModalProps> = ({
     onSendMessage(worker.id, textToSend, imgToSend);
     setInputText('');
     setSelectedImage(null);
-    setCustomImageUrl('');
     setShowImagePicker(false);
 
     // Trigger simulated worker typing & response
@@ -324,6 +323,25 @@ export const ChatModal: React.FC<ChatModalProps> = ({
         </div>
 
         {/* Image Attachment Selector Overlay */}
+        <input
+          type="file"
+          ref={chatPhotoInputRef}
+          accept="image/*"
+          capture="environment"
+          className="hidden"
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = (ev) => {
+              if (ev.target?.result) {
+                setSelectedImage(ev.target.result as string);
+                setShowImagePicker(false);
+              }
+            };
+            reader.readAsDataURL(file);
+          }}
+        />
         <AnimatePresence>
           {showImagePicker && (
             <motion.div
@@ -334,34 +352,50 @@ export const ChatModal: React.FC<ChatModalProps> = ({
             >
               <div className="flex items-center justify-between text-xs font-bold text-slate-300">
                 <span className="flex items-center gap-1">
-                  <Camera className="w-4 h-4 text-blue-400" /> Select Site / Material Photo:
+                  <Camera className="w-4 h-4 text-blue-400" /> Attach Site / Material Photo:
                 </span>
                 <button
+                  type="button"
                   onClick={() => setShowImagePicker(false)}
-                  className="p-1 hover:text-white"
+                  className="p-1 hover:text-white cursor-pointer"
                 >
                   <X className="w-4 h-4" />
                 </button>
               </div>
 
-              <div className="grid grid-cols-4 gap-2">
-                {SAMPLE_SITE_IMAGES.map((img) => (
-                  <button
-                    key={img.id}
-                    onClick={() => {
-                      setSelectedImage(img.url);
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={async () => {
+                    const res = await deviceCameraService.captureDocumentPhoto('Capture Site Photo');
+                    if (res.success && res.dataUrl) {
+                      setSelectedImage(res.dataUrl);
                       setShowImagePicker(false);
-                    }}
-                    className={`relative rounded-lg overflow-hidden border-2 h-16 transition-all ${
-                      selectedImage === img.url ? 'border-blue-500 ring-2 ring-blue-400/50' : 'border-slate-700 hover:border-slate-500'
-                    }`}
-                  >
-                    <img src={img.url} alt={img.title} className="w-full h-full object-cover" />
-                    <span className="absolute bottom-0 inset-x-0 bg-black/60 text-[9px] text-white truncate px-1 text-center font-medium">
-                      {img.title}
-                    </span>
-                  </button>
-                ))}
+                    } else if (!res.cancelled) {
+                      chatPhotoInputRef.current?.click();
+                    }
+                  }}
+                  className="py-2.5 px-3 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer"
+                >
+                  <Camera className="w-4 h-4" />
+                  <span>Open Camera</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    const res = await deviceCameraService.pickGalleryPhoto('Select Site Photo');
+                    if (res.success && res.dataUrl) {
+                      setSelectedImage(res.dataUrl);
+                      setShowImagePicker(false);
+                    } else if (!res.cancelled) {
+                      chatPhotoInputRef.current?.click();
+                    }
+                  }}
+                  className="py-2.5 px-3 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer"
+                >
+                  <ImageIcon className="w-4 h-4 text-amber-400" />
+                  <span>Photo Gallery</span>
+                </button>
               </div>
             </motion.div>
           )}

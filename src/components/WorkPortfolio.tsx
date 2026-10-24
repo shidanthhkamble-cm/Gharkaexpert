@@ -1,35 +1,27 @@
 import React, { useState, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { 
-  Camera, 
-  Image as ImageIcon, 
-  Plus, 
-  X, 
-  Sparkles, 
-  CheckCircle, 
+import {
+  Camera,
+  Image as ImageIcon,
+  Plus,
+  X,
+  CheckCircle,
   FolderPlus,
   MapPin,
   Calendar,
-  Upload
+  Upload,
+  AlertCircle,
 } from 'lucide-react';
 import { PortfolioItem, TradeCategory, Language } from '../types';
 import { t, getCategoryLabel } from '../data/translations';
 import { getCategory3DIcon } from '../data/categoryIcons';
+import { deviceCameraService } from '../services/capacitorDeviceService';
 
 interface WorkPortfolioProps {
   portfolio: PortfolioItem[];
   currentLanguage: Language;
   onAddPortfolioItem: (item: PortfolioItem) => void;
 }
-
-const SAMPLE_PROJECT_IMAGES = [
-  { label: 'Masonry & Slab', url: 'https://images.unsplash.com/photo-1503387762-592deb58ef4e?w=800&auto=format&fit=crop&q=80' },
-  { label: 'Tile & Marble', url: 'https://images.unsplash.com/photo-1581092160607-ee22621dd758?w=800&auto=format&fit=crop&q=80' },
-  { label: 'Modular Kitchen', url: 'https://images.unsplash.com/photo-1556911220-e15b29be8c8f?w=800&auto=format&fit=crop&q=80' },
-  { label: 'Exterior Paint', url: 'https://images.unsplash.com/photo-1562259949-e8e7689d7828?w=800&auto=format&fit=crop&q=80' },
-  { label: 'Plumbing Pipeline', url: 'https://images.unsplash.com/photo-1584622650111-993a426fbf0a?w=800&auto=format&fit=crop&q=80' },
-  { label: 'Electrical Wiring', url: 'https://images.unsplash.com/photo-1621905251189-08b45d6a269e?w=800&auto=format&fit=crop&q=80' },
-];
 
 export const WorkPortfolio: React.FC<WorkPortfolioProps> = ({
   portfolio,
@@ -41,39 +33,32 @@ export const WorkPortfolio: React.FC<WorkPortfolioProps> = ({
   const [category, setCategory] = useState<TradeCategory>('mason');
   const [description, setDescription] = useState('');
   const [location, setLocation] = useState('');
-  const [selectedImg, setSelectedImg] = useState(SAMPLE_PROJECT_IMAGES[0].url);
-  const [isCameraActive, setIsCameraActive] = useState(false);
+  const [selectedImg, setSelectedImg] = useState<string>('');
+  const [uploadError, setUploadError] = useState<string | null>(null);
 
-  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
-  const handleStartCamera = async () => {
-    try {
-      if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-        const stream = await navigator.mediaDevices.getUserMedia({ video: true });
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
-          setIsCameraActive(true);
-        }
-      }
-    } catch (err) {
-      console.warn('Camera error:', err);
+  const handleCaptureCamera = async () => {
+    setUploadError(null);
+    const res = await deviceCameraService.captureDocumentPhoto('Capture Completed Site Work');
+    if (res.success && res.dataUrl) {
+      setSelectedImg(res.dataUrl);
+      return;
+    }
+    if (!res.cancelled) {
+      fileInputRef.current?.click();
     }
   };
 
-  const handleSnapPhoto = () => {
-    if (videoRef.current && isCameraActive) {
-      const canvas = document.createElement('canvas');
-      canvas.width = videoRef.current.videoWidth || 640;
-      canvas.height = videoRef.current.videoHeight || 480;
-      const ctx = canvas.getContext('2d');
-      if (ctx) {
-        ctx.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height);
-        setSelectedImg(canvas.toDataURL('image/jpeg'));
-        // Stop camera
-        const stream = videoRef.current.srcObject as MediaStream;
-        stream?.getTracks().forEach((t) => t.stop());
-        setIsCameraActive(false);
-      }
+  const handlePickGallery = async () => {
+    setUploadError(null);
+    const res = await deviceCameraService.pickGalleryPhoto('Select Project Photo');
+    if (res.success && res.dataUrl) {
+      setSelectedImg(res.dataUrl);
+      return;
+    }
+    if (!res.cancelled) {
+      fileInputRef.current?.click();
     }
   };
 
@@ -83,6 +68,7 @@ export const WorkPortfolio: React.FC<WorkPortfolioProps> = ({
       const reader = new FileReader();
       reader.onloadend = () => {
         setSelectedImg(reader.result as string);
+        setUploadError(null);
       };
       reader.readAsDataURL(file);
     }
@@ -90,24 +76,33 @@ export const WorkPortfolio: React.FC<WorkPortfolioProps> = ({
 
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
+    if (!selectedImg) {
+      setUploadError('Please capture a photo using your camera or select one from your gallery.');
+      return;
+    }
     if (!title.trim()) return;
 
     const newItem: PortfolioItem = {
       id: `p-${Date.now()}`,
-      title,
+      title: title.trim(),
       category,
       imageUrl: selectedImg,
-      description,
-      date: 'Today',
-      location: location || 'Site Location',
+      description: description.trim() || 'Completed site work.',
+      date: new Date().toLocaleDateString('en-IN', {
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric',
+      }),
+      location: location.trim() || 'Verified Site',
     };
 
     onAddPortfolioItem(newItem);
     setShowModal(false);
-    // Reset form
     setTitle('');
     setDescription('');
     setLocation('');
+    setSelectedImg('');
+    setUploadError(null);
   };
 
   return (
@@ -120,13 +115,14 @@ export const WorkPortfolio: React.FC<WorkPortfolioProps> = ({
             {t('portfolioTab', currentLanguage)}
           </h3>
           <p className="text-xs text-slate-500 font-normal">
-            Showcase your completed site work to build trust & get direct hiring calls
+            Showcase your completed site work to build trust &amp; get direct hiring calls
           </p>
         </div>
 
         <button
+          type="button"
           onClick={() => setShowModal(true)}
-          className="py-2.5 px-3.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl text-xs flex items-center gap-1.5 shadow-sm active:scale-95 shrink-0"
+          className="py-2.5 px-3.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl text-xs flex items-center gap-1.5 shadow-sm active:scale-95 shrink-0 cursor-pointer"
         >
           <Plus className="w-4 h-4 stroke-[2.5]" />
           <span>Upload Work</span>
@@ -192,110 +188,79 @@ export const WorkPortfolio: React.FC<WorkPortfolioProps> = ({
               <div className="flex items-center justify-between pb-3 border-b border-slate-800">
                 <div className="flex items-center gap-2">
                   <FolderPlus className="w-5 h-5 text-amber-400" />
-                  <h3 className="text-lg font-black text-white">
-                    Add New Project Photo
-                  </h3>
+                  <h3 className="text-lg font-black text-white">Add Project Photo</h3>
                 </div>
                 <button
+                  type="button"
                   onClick={() => setShowModal(false)}
-                  className="p-1.5 text-slate-400 hover:text-white bg-slate-800 rounded-full"
+                  className="p-1.5 text-slate-400 hover:text-white bg-slate-800 rounded-full cursor-pointer"
                 >
                   <X className="w-5 h-5" />
                 </button>
               </div>
 
               <form onSubmit={handleSave} className="space-y-3">
-                {/* Photo Preview / Capture */}
+                <input
+                  type="file"
+                  ref={fileInputRef}
+                  accept="image/*"
+                  capture="environment"
+                  className="hidden"
+                  onChange={handleFileChange}
+                />
+
                 <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1">
-                    Select Project Image:
+                  <label className="block text-xs font-semibold text-slate-300 mb-1.5">
+                    Project Photo *
                   </label>
                   <div className="relative h-44 bg-slate-950 rounded-2xl overflow-hidden border-2 border-slate-700 flex items-center justify-center">
-                    {isCameraActive ? (
-                      <video
-                        ref={videoRef}
-                        autoPlay
-                        playsInline
-                        muted
-                        className="w-full h-full object-cover"
-                      />
-                    ) : (
+                    {selectedImg ? (
                       <img
                         src={selectedImg}
                         alt="Project Preview"
                         className="w-full h-full object-cover"
                       />
-                    )}
-
-                    {isCameraActive && (
-                      <button
-                        type="button"
-                        onClick={handleSnapPhoto}
-                        className="absolute bottom-3 py-2 px-4 bg-amber-400 text-slate-950 font-bold rounded-xl text-xs shadow-lg"
-                      >
-                        Snap Photo 📸
-                      </button>
+                    ) : (
+                      <div className="text-center p-4 space-y-1.5">
+                        <Camera className="w-8 h-8 text-amber-400 mx-auto" />
+                        <p className="text-xs text-slate-300 font-semibold">
+                          Capture your completed site work
+                        </p>
+                      </div>
                     )}
                   </div>
 
-                  {/* Image Options */}
-                  <div className="flex items-center gap-2 mt-2">
+                  <div className="grid grid-cols-2 gap-2 mt-2.5">
                     <button
                       type="button"
-                      onClick={handleStartCamera}
-                      className="py-1.5 px-3 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold rounded-lg flex items-center gap-1"
+                      onClick={handleCaptureCamera}
+                      className="py-2 px-3 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold rounded-xl flex items-center justify-center gap-1.5 cursor-pointer"
                     >
-                      <Camera className="w-3.5 h-3.5 text-amber-400" />
-                      <span>Live Camera</span>
+                      <Camera className="w-4 h-4" />
+                      <span>Open Camera</span>
                     </button>
 
-                    <label className="py-1.5 px-3 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold rounded-lg flex items-center gap-1 cursor-pointer">
-                      <Upload className="w-3.5 h-3.5 text-amber-400" />
-                      <span>Choose File</span>
-                      <input
-                        type="file"
-                        accept="image/*"
-                        className="hidden"
-                        onChange={handleFileChange}
-                      />
-                    </label>
+                    <button
+                      type="button"
+                      onClick={handlePickGallery}
+                      className="py-2 px-3 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold rounded-xl border border-slate-700 flex items-center justify-center gap-1.5 cursor-pointer"
+                    >
+                      <Upload className="w-4 h-4 text-amber-400" />
+                      <span>Photo Gallery</span>
+                    </button>
                   </div>
 
-                  {/* Preset Sample Images */}
-                  <div className="mt-2">
-                    <span className="text-[10px] text-slate-400 block mb-1">
-                      Or pick sample project image:
-                    </span>
-                    <div className="flex gap-1.5 overflow-x-auto custom-scrollbar pb-1">
-                      {SAMPLE_PROJECT_IMAGES.map((sample, idx) => (
-                        <button
-                          key={idx}
-                          type="button"
-                          onClick={() => {
-                            setSelectedImg(sample.url);
-                            setIsCameraActive(false);
-                          }}
-                          className={`shrink-0 w-12 h-12 rounded-lg overflow-hidden border ${
-                            selectedImg === sample.url
-                              ? 'border-amber-400 ring-2 ring-amber-400/40'
-                              : 'border-slate-700'
-                          }`}
-                        >
-                          <img
-                            src={sample.url}
-                            alt={sample.label}
-                            className="w-full h-full object-cover"
-                          />
-                        </button>
-                      ))}
-                    </div>
-                  </div>
+                  {uploadError && (
+                    <p className="mt-2 text-xs text-rose-400 font-semibold flex items-center gap-1">
+                      <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                      <span>{uploadError}</span>
+                    </p>
+                  )}
                 </div>
 
-                {/* Title */}
                 <div>
                   <label className="block text-xs font-semibold text-slate-300 mb-1">
-                    Project Title (काम का शीर्षक)
+                    Project Title (काम का शीर्षक) *
                   </label>
                   <input
                     type="text"
@@ -307,7 +272,6 @@ export const WorkPortfolio: React.FC<WorkPortfolioProps> = ({
                   />
                 </div>
 
-                {/* Category & Location */}
                 <div className="grid grid-cols-2 gap-2">
                   <div>
                     <label className="block text-xs font-semibold text-slate-300 mb-1">
@@ -323,6 +287,7 @@ export const WorkPortfolio: React.FC<WorkPortfolioProps> = ({
                       <option value="painter">Painter / Rangari</option>
                       <option value="plumber">Plumber / Nal Karigar</option>
                       <option value="electrician">Electrician / Bijli</option>
+                      <option value="ac_repair">AC Technician</option>
                       <option value="helper">Helper / Labor</option>
                     </select>
                   </div>
@@ -335,13 +300,12 @@ export const WorkPortfolio: React.FC<WorkPortfolioProps> = ({
                       type="text"
                       value={location}
                       onChange={(e) => setLocation(e.target.value)}
-                      placeholder="e.g., Thane West"
+                      placeholder="e.g., Andheri West"
                       className="w-full px-3 py-2.5 bg-slate-800 border border-slate-700 rounded-xl text-xs text-white focus:outline-none focus:border-amber-500"
                     />
                   </div>
                 </div>
 
-                {/* Description */}
                 <div>
                   <label className="block text-xs font-semibold text-slate-300 mb-1">
                     Description / Details
@@ -350,17 +314,17 @@ export const WorkPortfolio: React.FC<WorkPortfolioProps> = ({
                     rows={2}
                     value={description}
                     onChange={(e) => setDescription(e.target.value)}
-                    placeholder="Describe the work done..."
+                    placeholder="Describe the work completed..."
                     className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-xs text-white focus:outline-none focus:border-amber-500"
                   />
                 </div>
 
                 <button
                   type="submit"
-                  className="w-full py-3 bg-amber-400 hover:bg-amber-300 text-slate-950 font-extrabold rounded-xl shadow-lg flex items-center justify-center gap-1.5 text-sm transition-all"
+                  className="w-full py-3 bg-amber-400 hover:bg-amber-300 text-slate-950 font-extrabold rounded-xl shadow-lg flex items-center justify-center gap-1.5 text-sm transition-all cursor-pointer"
                 >
                   <CheckCircle className="w-4 h-4" />
-                  <span>Save to My Portfolio 🖼️</span>
+                  <span>Save to My Portfolio</span>
                 </button>
               </form>
             </motion.div>

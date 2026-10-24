@@ -1,333 +1,357 @@
-/**
- * Firebase Phone Authentication Service
- * 
- * Uses official Firebase Authentication (signInWithPhoneNumber & RecaptchaVerifier)
- * to deliver 6-digit SMS OTPs directly to Indian mobile numbers (+91).
- */
-
+import { Capacitor } from '@capacitor/core';
+import { FirebaseAuthentication } from '@capacitor-firebase/authentication';
 import {
   RecaptchaVerifier,
   signInWithPhoneNumber,
   ConfirmationResult,
-  UserCredential
+  PhoneAuthProvider,
+  signInWithCredential,
+  UserCredential,
 } from 'firebase/auth';
 import { auth } from './firebaseConfig';
 
-export interface FirebasePhoneAuthRequest {
-  phone: string;
-  role: 'customer' | 'worker';
-}
-
 export interface FirebasePhoneAuthResponse {
   success: boolean;
-  verificationId?: string;
-  expiresInSeconds: number;
-  deliveryStatus: 'delivered' | 'sent' | 'queued';
-  channel: 'firebase_sms' | 'truecaller';
-  provider: 'Firebase Phone Authentication';
-  error?: string;
+  verificationId: string;
+  autoVerified?: boolean;
+  userCredential?: UserCredential | null;
 }
 
 export interface VerifyOtpResponse {
   success: boolean;
   verified: boolean;
-  channel?: 'firebase_sms' | 'truecaller';
   userCredential?: UserCredential | null;
+  uid?: string;
   error?: string;
 }
 
-interface ActiveSession {
-  code: string;
+interface PendingPhoneVerification {
   phone: string;
-  createdAt: number;
-  expiresAt: number;
-  attempts: number;
+  e164Phone: string;
   confirmationResult?: ConfirmationResult;
-  channel: 'firebase_sms' | 'truecaller';
+  nativeVerificationId?: string;
+  nativeAutoVerifiedUid?: string;
 }
 
 class FirebasePhoneAuthService {
-  private activeSessions = new Map<string, ActiveSession>();
   private recaptchaVerifier: RecaptchaVerifier | null = null;
-  private currentConfirmationResult: ConfirmationResult | null = null;
+  private recaptchaWidgetContainerId: string | null = null;
+  private pendingSessions = new Map<string, PendingPhoneVerification>();
 
   /**
-   * Generates a secure cryptographic 6-digit numeric OTP for verification
-   */
-  private generateSixDigitCode(): string {
-    const array = new Uint32Array(1);
-    crypto.getRandomValues(array);
-    return (100000 + (array[0] % 900000)).toString();
-  }
-
-  /**
-   * Normalizes phone number to standard 10-digit Indian mobile format
+   * Normalizes phone number to 10-digit Indian mobile number
    */
   public normalizePhone(rawPhone: string): string {
     const digits = rawPhone.replace(/\D/g, '');
-    if (digits.length >= 10) {
-      return digits.slice(-10);
+    if (digits.length === 12 && digits.startsWith('91')) {
+      return digits.slice(2);
     }
     return digits;
   }
 
   /**
-   * Formats into international E.164 format (+91XXXXXXXXXX)
+   * Validates Indian 10-digit mobile number and formats to E.164 (+91XXXXXXXXXX)
    */
   public formatToE164(phone: string): string {
     const clean = this.normalizePhone(phone);
+    if (!/^[6-9]\d{9}$/.test(clean)) {
+      throw new Error('Please enter a valid 10-digit Indian mobile number.');
+    }
     return `+91${clean}`;
   }
 
   /**
-   * Initializes or gets the Firebase RecaptchaVerifier
+   * Cleanly destroys any existing RecaptchaVerifier instance and resets its DOM container
    */
-  private getOrCreateRecaptcha(containerId = 'firebase-recaptcha-container'): RecaptchaVerifier | null {
-    if (typeof window === 'undefined') return null;
-
-    try {
-      let container = document.getElementById(containerId);
-      if (!container) {
-        container = document.createElement('div');
-        container.id = containerId;
-        container.style.position = 'fixed';
-        container.style.bottom = '0';
-        container.style.right = '0';
-        container.style.zIndex = '9999';
-        document.body.appendChild(container);
+  public clearRecaptcha(): void {
+    if (this.recaptchaVerifier) {
+      try {
+        this.recaptchaVerifier.clear();
+      } catch {
+        // Ignore cleanup errors on unmounted nodes
       }
-
-      if (!this.recaptchaVerifier) {
-        this.recaptchaVerifier = new RecaptchaVerifier(auth, containerId, {
-          size: 'invisible',
-          callback: () => {
-            console.log('[Firebase Phone Auth] reCAPTCHA solved successfully');
-          },
-          'expired-callback': () => {
-            console.warn('[Firebase Phone Auth] reCAPTCHA expired, resetting...');
-            this.recaptchaVerifier = null;
-          }
-        });
-      }
-      return this.recaptchaVerifier;
-    } catch (e) {
-      console.warn('[Firebase Phone Auth] Could not init RecaptchaVerifier (development mode fallback active):', e);
-      return null;
+      this.recaptchaVerifier = null;
     }
+
+    if (typeof document !== 'undefined' && this.recaptchaWidgetContainerId) {
+      const existing = document.getElementById(this.recaptchaWidgetContainerId);
+      if (existing) {
+        existing.innerHTML = '';
+      }
+    }
+    this.recaptchaWidgetContainerId = null;
   }
 
   /**
-   * Sends 6-digit SMS OTP verification code via Firebase Phone Authentication
-   * @param phone 10-digit mobile number
-   * @param role User role ('customer' | 'worker')
+   * Creates a fresh Firebase RecaptchaVerifier attached to a live DOM element
+   */
+  private async initRecaptchaVerifier(containerId = 'firebase-recaptcha-container'): Promise<RecaptchaVerifier> {
+    if (typeof window === 'undefined' || typeof document === 'undefined') {
+      throw new Error('Firebase Phone Auth requires a browser or native mobile runtime.');
+    }
+
+    this.clearRecaptcha();
+
+    let container = document.getElementById(containerId);
+    if (!container) {
+      container = document.createElement('div');
+      container.id = containerId;
+      document.body.appendChild(container);
+    } else {
+      container.innerHTML = '';
+    }
+
+    this.recaptchaWidgetContainerId = containerId;
+    const verifier = new RecaptchaVerifier(auth, container, {
+      size: 'invisible',
+      'expired-callback': () => {
+        this.clearRecaptcha();
+      },
+    });
+
+    await verifier.render();
+    this.recaptchaVerifier = verifier;
+    return verifier;
+  }
+
+  /**
+   * Maps Firebase Auth error codes to clear, actionable messages
+   */
+  private formatFirebaseAuthError(err: unknown): string {
+    const firebaseErr = err as { code?: string; message?: string };
+    const code = firebaseErr?.code || '';
+    const rawMsg = firebaseErr?.message || '';
+
+    if (code === 'auth/invalid-phone-number') {
+      return 'Invalid mobile number. Please check the 10-digit number and try again.';
+    }
+    if (code === 'auth/missing-phone-number') {
+      return 'Please enter your 10-digit mobile number.';
+    }
+    if (code === 'auth/too-many-requests') {
+      return 'Too many OTP requests for this number or device. Please wait a few minutes before trying again.';
+    }
+    if (code === 'auth/quota-exceeded') {
+      return 'SMS OTP quota temporarily exceeded for this project. Please try again later.';
+    }
+    if (code === 'auth/operation-not-allowed' || rawMsg.includes('OPERATION_NOT_ALLOWED')) {
+      return 'Phone SMS Sign-In is not enabled yet in Firebase Console. Please enable Authentication > Sign-in method > Phone in Firebase Console (charming-acronym-rt3g1).';
+    }
+    if (code === 'auth/unauthorized-domain') {
+      return `This domain (${typeof window !== 'undefined' ? window.location.hostname : 'app'}) is not authorized in Firebase Console. Add it under Authentication > Settings > Authorized domains.`;
+    }
+    if (code === 'auth/captcha-check-failed' || code === 'auth/invalid-app-credential') {
+      return 'Security verification (reCAPTCHA) failed. Please refresh and try again.';
+    }
+    if (code === 'auth/invalid-verification-code') {
+      return 'Incorrect 6-digit SMS OTP. Please check your SMS messages and enter the exact code.';
+    }
+    if (code === 'auth/code-expired' || code === 'auth/session-expired') {
+      return 'This SMS OTP has expired. Please tap "Resend SMS OTP" to receive a new code.';
+    }
+    if (code === 'auth/network-request-failed') {
+      return 'Network error while contacting Firebase Authentication. Please check your internet connection.';
+    }
+
+    return rawMsg || 'Unable to complete SMS authentication. Please try again.';
+  }
+
+  /**
+   * Sends a real 6-digit SMS OTP via Capacitor Native Firebase Auth (Android/iOS)
+   * or Firebase Web SDK signInWithPhoneNumber (Web/PWA).
    */
   public async sendFirebaseSmsOtp(
     phone: string,
-    role: 'customer' | 'worker',
-    containerId?: string
+    _role: 'customer' | 'worker',
+    containerId = 'firebase-recaptcha-container'
   ): Promise<FirebasePhoneAuthResponse> {
     const cleanPhone = this.normalizePhone(phone);
-    if (cleanPhone.length !== 10) {
-      throw new Error('Please enter a valid 10-digit mobile number');
-    }
-
     const fullPhone = this.formatToE164(cleanPhone);
-    const code = this.generateSixDigitCode();
-    const now = Date.now();
-    const expiresInSeconds = 300; // 5 minutes validity
 
-    let confirmationResult: ConfirmationResult | undefined = undefined;
+    // 1. Native Android / iOS Capacitor Execution Path
+    if (Capacitor.isNativePlatform()) {
+      try {
+        await FirebaseAuthentication.removeAllListeners();
 
-    // Attempt real Firebase Phone Auth if environment is configured
-    try {
-      const verifier = this.getOrCreateRecaptcha(containerId);
-      if (verifier && auth) {
-        confirmationResult = await signInWithPhoneNumber(auth, fullPhone, verifier);
-        this.currentConfirmationResult = confirmationResult;
-        console.log(`[Firebase Phone Auth] Real SMS OTP dispatched to ${fullPhone} via Firebase`);
+        const verificationPromise = new Promise<{
+          verificationId?: string;
+          autoVerifiedUid?: string;
+        }>((resolve, reject) => {
+          let settled = false;
+
+          void FirebaseAuthentication.addListener('phoneCodeSent', (event) => {
+            if (!settled) {
+              settled = true;
+              resolve({ verificationId: event.verificationId });
+            }
+          });
+
+          void FirebaseAuthentication.addListener('phoneVerificationCompleted', (event) => {
+            if (!settled) {
+              settled = true;
+              resolve({ autoVerifiedUid: event.user?.uid });
+            }
+          });
+
+          void FirebaseAuthentication.addListener('phoneVerificationFailed', (event) => {
+            if (!settled) {
+              settled = true;
+              reject(new Error(event.message || 'Phone SMS verification failed on device.'));
+            }
+          });
+
+          FirebaseAuthentication.signInWithPhoneNumber({
+            phoneNumber: fullPhone,
+          }).catch((err) => {
+            if (!settled) {
+              settled = true;
+              reject(err);
+            }
+          });
+        });
+
+        const nativeResult = await verificationPromise;
+        const verificationId = nativeResult.verificationId || 'native_auto_verified';
+
+        this.pendingSessions.set(cleanPhone, {
+          phone: cleanPhone,
+          e164Phone: fullPhone,
+          nativeVerificationId: nativeResult.verificationId,
+          nativeAutoVerifiedUid: nativeResult.autoVerifiedUid,
+        });
+
+        return {
+          success: true,
+          verificationId,
+          autoVerified: Boolean(nativeResult.autoVerifiedUid),
+        };
+      } catch (err: unknown) {
+        throw new Error(this.formatFirebaseAuthError(err));
       }
-    } catch (firebaseErr: unknown) {
-      const err = firebaseErr as { code?: string; message?: string };
-      console.log(`[Firebase Phone Auth] Firebase dispatch mode fallback: ${err.message || err.code || firebaseErr}`);
-      // Fallback seamlessly so users in development / preview or sandbox environments can still test smoothly
     }
 
-    // Store active session
-    this.activeSessions.set(cleanPhone, {
-      code,
-      phone: cleanPhone,
-      createdAt: now,
-      expiresAt: now + expiresInSeconds * 1000,
-      attempts: 0,
-      confirmationResult,
-      channel: 'firebase_sms',
-    });
+    // 2. Standard Firebase JS SDK Execution Path (signInWithPhoneNumber + RecaptchaVerifier)
+    try {
+      const verifier = await this.initRecaptchaVerifier(containerId);
+      const confirmationResult = await signInWithPhoneNumber(auth, fullPhone, verifier);
 
-    // Simulate standard network delivery handshake (400ms - 600ms)
-    await new Promise((resolve) => setTimeout(resolve, 550));
-
-    console.log(`[Firebase Phone Auth] 6-digit SMS OTP generated for ${fullPhone} (${role}): ${code}`);
-
-    // Expose in console / window for testing convenience in preview environments
-    if (typeof window !== 'undefined') {
-      (window as unknown as Record<string, unknown>).__LAST_FIREBASE_SMS_OTP__ = {
+      this.pendingSessions.set(cleanPhone, {
         phone: cleanPhone,
-        fullPhone,
-        code,
-        channel: 'firebase_sms',
-        provider: 'Firebase Phone Authentication',
-        timestamp: new Date().toISOString(),
-      };
-    }
+        e164Phone: fullPhone,
+        confirmationResult,
+      });
 
-    return {
-      success: true,
-      verificationId: confirmationResult?.verificationId || `fb_ver_${Date.now()}_${cleanPhone}`,
-      expiresInSeconds,
-      deliveryStatus: 'delivered',
-      channel: 'firebase_sms',
-      provider: 'Firebase Phone Authentication',
-    };
+      return {
+        success: true,
+        verificationId: confirmationResult.verificationId,
+      };
+    } catch (err: unknown) {
+      this.clearRecaptcha();
+      throw new Error(this.formatFirebaseAuthError(err));
+    }
   }
 
   /**
-   * Verifies the user-entered 6-digit SMS OTP code
+   * Verifies the 6-digit SMS OTP entered by the user against Firebase Authentication
    */
   public async verifyFirebaseSmsOtp(phone: string, enteredCode: string): Promise<VerifyOtpResponse> {
     const cleanPhone = this.normalizePhone(phone);
-    const session = this.activeSessions.get(cleanPhone);
+    const code = enteredCode.replace(/\D/g, '');
 
-    // Latency simulation for realistic Firebase verification response
-    await new Promise((resolve) => setTimeout(resolve, 450));
+    if (code.length !== 6) {
+      return {
+        success: false,
+        verified: false,
+        error: 'Please enter the complete 6-digit SMS OTP.',
+      };
+    }
 
-    // Check if session exists
+    const session = this.pendingSessions.get(cleanPhone);
     if (!session) {
-      // Allow fallback for dev convenience if demo numbers were used
-      if (enteredCode.length === 6) {
-        return {
-          success: true,
-          verified: true,
-          channel: 'firebase_sms',
-        };
-      }
       return {
         success: false,
         verified: false,
-        error: 'No active Firebase SMS session found. Please request a new SMS OTP.',
+        error: 'No active SMS verification session found. Please tap "Resend SMS OTP".',
       };
     }
 
-    // Check expiration
-    if (Date.now() > session.expiresAt) {
-      this.activeSessions.delete(cleanPhone);
-      return {
-        success: false,
-        verified: false,
-        error: 'The 6-digit Firebase SMS code has expired. Please click "Resend SMS OTP".',
-      };
-    }
-
-    // Rate limiting attempts (max 5)
-    session.attempts += 1;
-    if (session.attempts > 5) {
-      this.activeSessions.delete(cleanPhone);
-      return {
-        success: false,
-        verified: false,
-        error: 'Too many incorrect attempts. Please request a new 6-digit code via Firebase.',
-      };
-    }
-
-    // Attempt Firebase confirmation if active confirmationResult exists
-    if (session.confirmationResult) {
+    // 1. Native Android / iOS Capacitor Verification
+    if (Capacitor.isNativePlatform()) {
       try {
-        const userCredential = await session.confirmationResult.confirm(enteredCode);
-        this.activeSessions.delete(cleanPhone);
-        return {
-          success: true,
-          verified: true,
-          channel: 'firebase_sms',
-          userCredential,
-        };
-      } catch (confirmErr: unknown) {
-        const err = confirmErr as { code?: string; message?: string };
-        console.warn('[Firebase Phone Auth] Confirm failed:', err.code, err.message);
-        // If code matches simulated backup session, proceed
-        if (enteredCode === session.code) {
-          this.activeSessions.delete(cleanPhone);
+        if (session.nativeAutoVerifiedUid) {
+          this.pendingSessions.delete(cleanPhone);
           return {
             success: true,
             verified: true,
-            channel: 'firebase_sms',
+            uid: session.nativeAutoVerifiedUid,
           };
         }
+
+        if (!session.nativeVerificationId) {
+          return {
+            success: false,
+            verified: false,
+            error: 'Verification ID missing. Please tap "Resend SMS OTP".',
+          };
+        }
+
+        const result = await FirebaseAuthentication.confirmVerificationCode({
+          verificationId: session.nativeVerificationId,
+          verificationCode: code,
+        });
+
+        // Sync Firebase JS SDK auth state when possible
+        let webCredential: UserCredential | null = null;
+        try {
+          const phoneCred = PhoneAuthProvider.credential(session.nativeVerificationId, code);
+          webCredential = await signInWithCredential(auth, phoneCred);
+        } catch {
+          // Native auth session already established via Capacitor FirebaseAuthentication
+        }
+
+        this.pendingSessions.delete(cleanPhone);
+        return {
+          success: true,
+          verified: true,
+          userCredential: webCredential,
+          uid: result.user?.uid || webCredential?.user?.uid,
+        };
+      } catch (err: unknown) {
         return {
           success: false,
           verified: false,
-          error: 'Invalid 6-digit verification code. Please check the SMS and try again.',
+          error: this.formatFirebaseAuthError(err),
         };
       }
     }
 
-    // Check code against generated session code (or universal demo code for testing)
-    const isCodeValid = enteredCode === session.code || enteredCode === '123456';
-    if (!isCodeValid) {
+    // 2. Standard Firebase JS SDK Confirmation
+    if (!session.confirmationResult) {
       return {
         success: false,
         verified: false,
-        error: `Incorrect code. ${5 - session.attempts} attempts remaining. Please enter the 6-digit code sent via Firebase SMS.`,
+        error: 'Active SMS session expired. Please tap "Resend SMS OTP".',
       };
     }
 
-    // Successfully verified! Clear session
-    this.activeSessions.delete(cleanPhone);
-    return {
-      success: true,
-      verified: true,
-      channel: 'firebase_sms',
-    };
-  }
+    try {
+      const userCredential = await session.confirmationResult.confirm(code);
+      this.pendingSessions.delete(cleanPhone);
+      this.clearRecaptcha();
 
-  /**
-   * Resend Firebase 6-Digit SMS OTP
-   */
-  public async resendFirebaseSmsOtp(phone: string, role: 'customer' | 'worker'): Promise<FirebasePhoneAuthResponse> {
-    const cleanPhone = this.normalizePhone(phone);
-    this.activeSessions.delete(cleanPhone);
-    return this.sendFirebaseSmsOtp(cleanPhone, role);
-  }
-
-  /**
-   * Helper to retrieve currently active session for inspection or debugging in preview
-   */
-  public getSessionCode(phone: string): string | null {
-    const cleanPhone = this.normalizePhone(phone);
-    const session = this.activeSessions.get(cleanPhone);
-    return session ? session.code : null;
-  }
-
-  /**
-   * Truecaller 1-Click Instant Verification (Hardware/SIM based instant token)
-   */
-  public async verifyWithTruecaller(phone: string): Promise<VerifyOtpResponse> {
-    const cleanPhone = this.normalizePhone(phone);
-    if (cleanPhone.length !== 10) {
+      return {
+        success: true,
+        verified: true,
+        userCredential,
+        uid: userCredential.user.uid,
+      };
+    } catch (err: unknown) {
       return {
         success: false,
         verified: false,
-        channel: 'truecaller',
-        error: 'Invalid 10-digit mobile number for Truecaller 1-Click verification.',
+        error: this.formatFirebaseAuthError(err),
       };
     }
-
-    // Simulate Truecaller SDK verification handshake (600ms)
-    await new Promise((resolve) => setTimeout(resolve, 600));
-
-    return {
-      success: true,
-      verified: true,
-      channel: 'truecaller',
-    };
   }
 }
 

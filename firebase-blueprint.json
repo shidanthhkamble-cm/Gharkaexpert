@@ -1,0 +1,144 @@
+{
+  "entities": {
+    "UserPublicProfile": {
+      "title": "UserPublicProfile",
+      "description": "Public non-PII profile information for verified Customers and Karigars.",
+      "type": "object",
+      "properties": {
+        "ownerId": {
+          "type": "string",
+          "description": "Firebase Auth UID of the account owner.",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "name": {
+          "type": "string",
+          "description": "Display name of the Customer or Karigar.",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "role": {
+          "type": "string",
+          "description": "Account role selected at registration.",
+          "enum": ["customer", "worker"],
+          "maxLength": 20
+        },
+        "trade": {
+          "type": "string",
+          "description": "Primary trade skill for Karigars.",
+          "maxLength": 40
+        },
+        "pincode": {
+          "type": "string",
+          "description": "6-digit service area pincode.",
+          "maxLength": 10
+        },
+        "aadhaarVerified": {
+          "type": "boolean",
+          "description": "Whether KYC document verification was completed."
+        },
+        "isDeleted": {
+          "type": "boolean",
+          "description": "Soft-delete flag hiding paused accounts from active searches."
+        },
+        "experienceYears": {
+          "type": "number",
+          "description": "Years of professional experience."
+        },
+        "rating": {
+          "type": "number",
+          "description": "Average service rating from 1 to 5."
+        },
+        "reviewsCount": {
+          "type": "number",
+          "description": "Total number of customer reviews."
+        },
+        "completedJobs": {
+          "type": "number",
+          "description": "Total completed jobs count."
+        },
+        "dailyRate": {
+          "type": "number",
+          "description": "Daily wage rate in INR."
+        },
+        "visitingFee": {
+          "type": "number",
+          "description": "Visiting inspection fee in INR."
+        },
+        "bio": {
+          "type": "string",
+          "description": "Short professional bio.",
+          "maxLength": 500
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server creation timestamp."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server update timestamp."
+        }
+      },
+      "required": ["ownerId", "name", "role", "aadhaarVerified", "isDeleted", "createdAt", "updatedAt"]
+    },
+    "UserPrivateAccount": {
+      "title": "UserPrivateAccount",
+      "description": "Strictly owner-isolated PII and device lifecycle metadata for soft-delete restoration.",
+      "type": "object",
+      "properties": {
+        "ownerId": {
+          "type": "string",
+          "description": "Firebase Auth UID of the account owner.",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "phoneNumber": {
+          "type": "string",
+          "description": "Verified E.164 or 10-digit mobile number.",
+          "minLength": 10,
+          "maxLength": 20
+        },
+        "deviceId": {
+          "type": "string",
+          "description": "Installation device UUID for same-device account restoration.",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "isDeleted": {
+          "type": "boolean",
+          "description": "Whether account is currently soft-deleted."
+        },
+        "deletedAtIso": {
+          "type": "string",
+          "description": "ISO timestamp when soft-deletion occurred, or empty string when active.",
+          "maxLength": 40
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server creation timestamp."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server update timestamp."
+        }
+      },
+      "required": ["ownerId", "phoneNumber", "deviceId", "isDeleted", "deletedAtIso", "createdAt", "updatedAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "UserPublicProfile",
+      "description": "Public profile documents keyed by Firebase Auth UID."
+    },
+    "/users/{userId}/private/{docId}": {
+      "schema": "UserPrivateAccount",
+      "description": "Owner-only PII and soft-delete metadata subcollection."
+    }
+  }
+}

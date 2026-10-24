@@ -73,10 +73,7 @@ export const BannerAd: React.FC<BannerAdProps> = ({
       <div className="bg-slate-950 px-3 py-0.5 flex items-center justify-between text-[9px] text-slate-400 border-b border-slate-800/80">
         <div className="flex items-center gap-1.5">
           <span className="bg-amber-400 text-slate-950 font-black px-1.5 py-0.2 rounded text-[8px] uppercase tracking-wider">
-            Google AdMob
-          </span>
-          <span className="font-mono text-slate-400 hidden xs:inline">
-            Unit: {adUnitId.slice(0, 24)}...
+            Sponsored
           </span>
         </div>
         <span className="text-[8px] text-slate-500 flex items-center gap-1">
@@ -292,10 +289,7 @@ export const InterstitialAdModal: React.FC<InterstitialAdModalProps> = ({
         <div className="w-full flex items-center justify-between text-xs text-slate-400 border-b border-slate-800/90 pb-2.5 pt-1">
           <div className="flex items-center gap-1.5">
             <span className="bg-amber-400 text-slate-950 font-black text-[9px] px-2 py-0.5 rounded tracking-wider uppercase shadow-2xs">
-              Google AdMob Interstitial
-            </span>
-            <span className="text-[9px] text-slate-400 font-mono hidden xs:inline">
-              Unit: {adUnitId.slice(-10)}
+              Sponsored
             </span>
           </div>
 
