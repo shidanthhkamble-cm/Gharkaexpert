@@ -830,7 +830,13 @@ export default function App() {
 
   return (
     <MobileDeviceFrame>
-      <div className="min-h-[640px] bg-slate-50 text-slate-800 flex flex-col justify-between select-none relative">
+      <div
+        className={`min-h-dvh flex-1 w-full flex flex-col justify-between select-none relative ${
+          onboardingStep === 'home'
+            ? 'bg-slate-50 text-slate-800'
+            : 'bg-[#1E3A8A] text-white'
+        }`}
+      >
         {/* ONBOARDING FLOW SCREENS */}
         {onboardingStep === 'splash' && (
           <SplashScreen
@@ -873,7 +879,7 @@ export default function App() {
 
         {/* MAIN HOME SCREEN */}
         {onboardingStep === 'home' && (
-          <div className="flex flex-col min-h-[640px] pb-16 bg-slate-50">
+          <div className="flex flex-col min-h-dvh flex-1 pb-16 bg-slate-50">
             {/* Header */}
             <Header
               currentLanguage={currentLanguage}

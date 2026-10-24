@@ -4,13 +4,13 @@ import confetti from 'canvas-confetti';
 import {
   Home,
   HardHat,
+  Hammer,
   Phone,
   CheckCircle,
   CheckCircle2,
   ArrowRight,
   ArrowLeft,
   ShieldCheck,
-  Sparkles,
   UploadCloud,
   Camera,
   RefreshCw,
@@ -92,7 +92,10 @@ const WORKER_SKILL_OPTIONS: {
 ];
 
 const DEFAULT_CUSTOMER_AVATAR =
-  'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=400&auto=format&fit=crop&q=80';
+  'data:image/svg+xml;utf8,' +
+  encodeURIComponent(
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120"><rect width="120" height="120" rx="24" fill="#1E3A8A"/><circle cx="60" cy="46" r="22" fill="#DBEAFE"/><path d="M24 104c6-20 22-30 36-30s30 10 36 30" fill="#DBEAFE"/></svg>'
+  );
 
 export const VerificationFlow: React.FC<VerificationFlowProps> = ({
   currentLanguage,
@@ -263,7 +266,7 @@ export const VerificationFlow: React.FC<VerificationFlowProps> = ({
     }
 
     return (
-      <div className="p-3.5 rounded-xl border border-amber-300 bg-amber-50/95 text-xs space-y-2 shadow-xs">
+      <div className="p-3.5 rounded-xl border border-amber-300 bg-amber-50 text-xs space-y-2">
         <div className="flex items-center gap-1.5 font-bold text-amber-950">
           <ShieldAlert className="w-4 h-4 text-amber-600 shrink-0" />
           <span>Verify Account Ownership</span>
@@ -273,10 +276,10 @@ export const VerificationFlow: React.FC<VerificationFlowProps> = ({
           A previous account was found for this number. Enter your registered name to restore your account, or start a fresh profile:
         </p>
 
-        <div className="p-2.5 bg-white rounded-lg border border-amber-200 space-y-2">
+        <div className="space-y-2 pt-1">
           <div className="flex items-center justify-between text-[11px]">
             <span className="font-semibold text-slate-700">Name Hint:</span>
-            <span className="font-mono font-bold text-amber-800 bg-amber-100 px-2 py-0.5 rounded">
+            <span className="font-mono font-bold text-amber-900">
               {authCheckResult.previousAccountNameHint || '*****'}
             </span>
           </div>
@@ -287,13 +290,13 @@ export const VerificationFlow: React.FC<VerificationFlowProps> = ({
               value={securityPromptName}
               onChange={(e) => setSecurityPromptName(e.target.value)}
               placeholder="Enter previous registered name"
-              className="flex-1 px-3 py-1.5 bg-slate-50 border border-slate-300 rounded-lg text-xs font-semibold text-slate-900 focus:outline-none focus:border-amber-600"
+              className="flex-1 px-3 py-2 bg-white border border-slate-300 rounded-lg text-xs font-semibold text-slate-900 focus:outline-none focus:border-amber-600"
             />
             <button
               type="button"
               onClick={handleVerifySecurityName}
               disabled={isVerifyingSecurityPrompt || !securityPromptName.trim()}
-              className="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs rounded-lg shadow-xs cursor-pointer disabled:opacity-50 flex items-center gap-1 shrink-0"
+              className="min-h-[40px] px-3.5 py-2 bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs rounded-lg cursor-pointer disabled:opacity-50 flex items-center gap-1 shrink-0 whitespace-nowrap"
             >
               {isVerifyingSecurityPrompt ? (
                 <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -316,13 +319,13 @@ export const VerificationFlow: React.FC<VerificationFlowProps> = ({
             </p>
           )}
 
-          <div className="pt-1.5 border-t border-slate-100 flex items-center justify-between text-[11px]">
-            <span className="text-slate-500">New owner of this number?</span>
+          <div className="pt-1.5 border-t border-amber-200/70 flex items-center justify-between text-[11px]">
+            <span className="text-slate-600">New owner of this number?</span>
             <button
               type="button"
               onClick={handleClaimAsNewSimOwner}
               disabled={isVerifyingSecurityPrompt}
-              className="text-blue-700 hover:text-blue-800 font-bold underline cursor-pointer"
+              className="text-blue-700 hover:text-blue-800 font-bold underline cursor-pointer whitespace-nowrap"
             >
               Start Fresh Profile
             </button>
@@ -372,7 +375,7 @@ export const VerificationFlow: React.FC<VerificationFlowProps> = ({
         reviewsCount: restoredUser?.reviewsCount,
         vipSubscription: restoredUser?.vipSubscription,
       });
-    }, 300);
+    }, 200);
   };
 
   const finalizeWorkerOtpVerified = async (verifiedPhone: string) => {
@@ -417,7 +420,7 @@ export const VerificationFlow: React.FC<VerificationFlowProps> = ({
           visitingFee: activeOrRestored.visitingFee,
           vipSubscription: activeOrRestored.vipSubscription,
         });
-      }, 300);
+      }, 200);
       return;
     }
 
@@ -449,7 +452,6 @@ export const VerificationFlow: React.FC<VerificationFlowProps> = ({
         'firebase-recaptcha-container'
       );
 
-      // Android Instant Verification (Play Services verified SIM automatically)
       if (response.autoVerified) {
         setFirebaseOtpSuccess('Mobile number verified automatically via SIM.');
         if (role === 'customer') {
@@ -507,7 +509,6 @@ export const VerificationFlow: React.FC<VerificationFlowProps> = ({
   const handleOtpInputChange = (idx: number, rawVal: string) => {
     const digits = rawVal.replace(/\D/g, '');
     if (digits.length > 1) {
-      // Handle full 6-digit autofill / paste into single field
       const next = [...otp];
       for (let i = 0; i < 6; i++) {
         next[i] = digits[i] || '';
@@ -614,7 +615,6 @@ export const VerificationFlow: React.FC<VerificationFlowProps> = ({
     }
   };
 
-  // Fallback HTML5 File Reader when user selects an image from file input
   const handleFileChange = (
     e: React.ChangeEvent<HTMLInputElement>,
     setter: (url: string) => void,
@@ -639,7 +639,6 @@ export const VerificationFlow: React.FC<VerificationFlowProps> = ({
     }
   };
 
-  // Native Smartphone Rear Camera Capture via @capacitor/camera
   const handleCapacitorCameraCapture = async (side: 'front' | 'back') => {
     setAadhaarUploadError(null);
     const label =
@@ -661,7 +660,11 @@ export const VerificationFlow: React.FC<VerificationFlowProps> = ({
       return;
     }
 
-    // Fallback to HTML5 camera capture input if WebView/browser requires input trigger
+    if (result.permissionDenied && result.error) {
+      setAadhaarUploadError(result.error);
+      return;
+    }
+
     if (side === 'front') {
       frontFileInputRef.current?.click();
     } else {
@@ -669,7 +672,6 @@ export const VerificationFlow: React.FC<VerificationFlowProps> = ({
     }
   };
 
-  // Native Photo Gallery Picker via @capacitor/camera
   const handleCapacitorGalleryPick = async (side: 'front' | 'back') => {
     setAadhaarUploadError(null);
     const label = side === 'front' ? 'Select Aadhaar Front' : 'Select Aadhaar Back';
@@ -687,6 +689,11 @@ export const VerificationFlow: React.FC<VerificationFlowProps> = ({
     }
 
     if (result.cancelled) {
+      return;
+    }
+
+    if (result.permissionDenied && result.error) {
+      setAadhaarUploadError(result.error);
       return;
     }
 
@@ -786,6 +793,10 @@ export const VerificationFlow: React.FC<VerificationFlowProps> = ({
     if (result.cancelled) {
       return;
     }
+    if (result.permissionDenied && result.error) {
+      setCameraError(result.error);
+      return;
+    }
     selfieFileInputRef.current?.click();
   };
 
@@ -837,51 +848,75 @@ export const VerificationFlow: React.FC<VerificationFlowProps> = ({
     });
   };
 
+  const handleBackNavigation = () => {
+    setFirebaseOtpError(null);
+    setFirebaseOtpSuccess(null);
+    if (step === 'customer_phone' || step === 'worker_phone') {
+      setStep('account_type');
+    } else if (step === 'customer_otp') {
+      setStep('customer_phone');
+    } else if (step === 'worker_otp') {
+      setStep('worker_phone');
+    } else if (step === 'worker_details') {
+      setStep('worker_otp');
+    } else if (step === 'worker_kyc') {
+      setStep('worker_details');
+    } else if (step === 'worker_camera') {
+      stopCamera();
+      setStep('worker_kyc');
+    }
+  };
+
   return (
-    <div className="min-h-screen w-full bg-slate-50 text-slate-800 p-4 sm:p-5 flex flex-col justify-between relative overflow-hidden">
+    <div className="min-h-dvh flex-1 w-full bg-[#1E3A8A] text-white px-4 py-5 sm:px-6 sm:py-6 flex flex-col justify-start relative overflow-x-hidden">
       {/* Persistent Invisible reCAPTCHA Anchor for Firebase Web Phone Auth */}
       <div id="firebase-recaptcha-container" className="sr-only" aria-hidden="true" />
 
-      {/* Top Navigation Header */}
-      <div className="flex items-center justify-between pb-3 border-b border-slate-200 text-xs mb-3">
-        {step !== 'account_type' ? (
-          <button
-            type="button"
-            onClick={() => {
-              setFirebaseOtpError(null);
-              setFirebaseOtpSuccess(null);
-              if (step === 'customer_phone' || step === 'worker_phone') {
-                setStep('account_type');
-              } else if (step === 'customer_otp') {
-                setStep('customer_phone');
-              } else if (step === 'worker_otp') {
-                setStep('worker_phone');
-              } else if (step === 'worker_details') {
-                setStep('worker_otp');
-              } else if (step === 'worker_kyc') {
-                setStep('worker_details');
-              } else if (step === 'worker_camera') {
-                stopCamera();
-                setStep('worker_kyc');
-              }
-            }}
-            className="flex items-center gap-1 text-slate-600 hover:text-blue-700 font-bold transition-colors cursor-pointer py-1 px-2 rounded-lg hover:bg-slate-100"
-          >
-            <ArrowLeft className="w-3.5 h-3.5" />
-            <span>Back</span>
-          </button>
-        ) : (
-          <span className="font-bold text-blue-700 flex items-center gap-1.5 text-xs">
-            <ShieldCheck className="w-4 h-4 text-blue-600" />
-            GharKaExpert Sign In
-          </span>
-        )}
+      {/* Top Navigation & Brand Header Inside Solid Deep Blue Area */}
+      <div className="w-full space-y-4 mb-5">
+        <div className="flex items-center justify-between min-h-[44px]">
+          {step !== 'account_type' ? (
+            <button
+              type="button"
+              onClick={handleBackNavigation}
+              className="min-h-[44px] px-3 -ml-2 rounded-xl text-white/90 hover:text-white hover:bg-white/10 font-semibold text-xs flex items-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap shrink-0"
+            >
+              <ArrowLeft className="w-4 h-4" />
+              <span>Back</span>
+            </button>
+          ) : (
+            <span className="text-xs font-semibold text-blue-100 flex items-center gap-1.5">
+              <ShieldCheck className="w-4 h-4 text-amber-400" />
+              <span>Direct Hiring · 0% Commission</span>
+            </span>
+          )}
 
-        <span className="text-[10px] uppercase tracking-wider font-extrabold px-2.5 py-0.5 rounded-full bg-blue-100 text-blue-800">
-          {selectedRole === 'customer' ? 'Customer' : 'Karigar KYC'}
-        </span>
+          <div className="text-xs font-medium text-blue-100 whitespace-nowrap shrink-0">
+            {selectedRole === 'customer' ? 'Customer Account' : 'Karigar Account'}
+          </div>
+        </div>
+
+        {/* App Logo & Brand Name Positioned Cleanly at Top */}
+        <div className="flex items-center gap-3.5 pt-1">
+          <div className="relative w-14 h-14 bg-white text-[#1E3A8A] rounded-2xl shadow-lg flex items-center justify-center shrink-0">
+            <HardHat className="w-7 h-7 text-[#1E3A8A] stroke-[2.2]" />
+            <div className="absolute -bottom-1 -right-1 w-6 h-6 bg-amber-400 text-slate-950 rounded-lg flex items-center justify-center shadow-sm">
+              <Hammer className="w-3.5 h-3.5 stroke-[2.4]" />
+            </div>
+          </div>
+
+          <div className="min-w-0">
+            <h1 className="text-2xl font-extrabold tracking-tight text-white leading-tight">
+              GharKaExpert
+            </h1>
+            <p className="text-xs text-blue-100 font-medium mt-0.5 leading-snug">
+              {t('tagline', currentLanguage)}
+            </p>
+          </div>
+        </div>
       </div>
 
+      {/* Main White Container Card Wrapping Forms, Inputs & Buttons */}
       <AnimatePresence mode="wait">
         {/* ========================================================================= */}
         {/* 1. ACCOUNT TYPE SELECTION                                                 */}
@@ -889,91 +924,87 @@ export const VerificationFlow: React.FC<VerificationFlowProps> = ({
         {step === 'account_type' && (
           <motion.div
             key="account_type"
-            initial={{ opacity: 0, y: 15 }}
+            initial={{ opacity: 0, y: 12 }}
             animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -15 }}
-            className="space-y-4 my-auto"
+            exit={{ opacity: 0, y: -12 }}
+            transition={{ duration: 0.18 }}
+            className="w-full bg-white text-slate-900 rounded-3xl p-5 sm:p-6 shadow-xl space-y-5"
           >
-            <div className="text-center space-y-1">
-              <span className="inline-flex items-center gap-1 px-3 py-1 bg-blue-50 text-blue-700 rounded-full text-xs font-bold border border-blue-100">
-                <Sparkles className="w-3.5 h-3.5" /> Select Account Type
-              </span>
-              <h2 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">
+            <div className="space-y-1">
+              <h2 className="text-xl font-bold text-slate-900 tracking-tight">
                 {t('roleTitle', currentLanguage)}
               </h2>
               <p className="text-xs text-slate-500 font-medium">
-                Choose how you want to use GharKaExpert
+                Select your role to sign in or create an account
               </p>
             </div>
 
-            <div className="space-y-3 pt-1">
-              {/* CUSTOMER CARD */}
-              <div
+            {/* Role Switcher Cards */}
+            <div className="space-y-3">
+              {/* CUSTOMER OPTION */}
+              <button
+                type="button"
                 onClick={() => setSelectedRole('customer')}
-                className={`p-4 rounded-2xl border-2 cursor-pointer transition-all ${
+                className={`w-full text-left p-4 rounded-2xl border transition-colors cursor-pointer ${
                   selectedRole === 'customer'
-                    ? 'bg-blue-50/80 border-blue-600 ring-2 ring-blue-500/20 shadow-md'
-                    : 'bg-white border-slate-200 hover:border-slate-300 hover:bg-slate-50/60'
+                    ? 'bg-blue-50/70 border-blue-600'
+                    : 'bg-slate-50/70 border-slate-200 hover:border-slate-300'
                 }`}
               >
                 <div className="flex items-start gap-3.5">
                   <div
-                    className={`p-3 rounded-2xl shadow-sm shrink-0 transition-colors ${
+                    className={`w-11 h-11 rounded-xl flex items-center justify-center shrink-0 transition-colors ${
                       selectedRole === 'customer'
-                        ? 'bg-blue-600 text-white'
-                        : 'bg-slate-100 text-slate-600'
+                        ? 'bg-[#1E3A8A] text-white'
+                        : 'bg-white text-slate-600 border border-slate-200'
                     }`}
                   >
-                    <Home className="w-6 h-6 stroke-[2.2]" />
+                    <Home className="w-5 h-5 stroke-[2.2]" />
                   </div>
                   <div className="space-y-1 flex-1 min-w-0">
-                    <div className="flex items-center justify-between">
-                      <h3 className="text-base font-bold text-slate-900">
+                    <div className="flex items-center justify-between gap-2">
+                      <h3 className="text-sm sm:text-base font-bold text-slate-900">
                         {t('roleCustomer', currentLanguage)}
                       </h3>
                       {selectedRole === 'customer' && (
-                        <div className="w-5 h-5 bg-blue-600 text-white rounded-full flex items-center justify-center shrink-0">
+                        <div className="w-5 h-5 bg-[#1E3A8A] text-white rounded-full flex items-center justify-center shrink-0">
                           <Check className="w-3.5 h-3.5 stroke-[3]" />
                         </div>
                       )}
                     </div>
                     <p className="text-xs text-slate-600 leading-relaxed">
-                      Hire trusted local electricians, plumbers, masons & repair experts with zero middlemen commission.
+                      Hire verified local electricians, plumbers, masons &amp; technicians directly.
                     </p>
-                    <div className="pt-1.5 flex flex-wrap gap-1.5">
-                      <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-amber-100 text-amber-900 rounded-md text-[10px] font-bold">
-                        📱 6-Digit SMS OTP
-                      </span>
-                      <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-blue-100 text-blue-800 rounded-md text-[10px] font-bold">
-                        ✓ Instant Access
-                      </span>
-                    </div>
+                    <p className="text-[11px] text-slate-500 font-medium pt-0.5">
+                      6-Digit SMS OTP · No ID Documents Needed
+                    </p>
                   </div>
                 </div>
-              </div>
+              </button>
 
-              {/* WORKER / MESTRI / CONTRACTOR CARD */}
-              <div
+              {/* WORKER / KARIGAR OPTION */}
+              <button
+                type="button"
                 onClick={() => setSelectedRole('worker')}
-                className={`p-4 rounded-2xl border-2 cursor-pointer transition-all ${
+                className={`w-full text-left p-4 rounded-2xl border transition-colors cursor-pointer ${
                   selectedRole === 'worker'
-                    ? 'bg-amber-50/70 border-amber-500 ring-2 ring-amber-500/20 shadow-md'
-                    : 'bg-white border-slate-200 hover:border-slate-300 hover:bg-slate-50/60'
+                    ? 'bg-amber-50/80 border-amber-500'
+                    : 'bg-slate-50/70 border-slate-200 hover:border-slate-300'
                 }`}
               >
                 <div className="flex items-start gap-3.5">
                   <div
-                    className={`p-3 rounded-2xl shadow-sm shrink-0 transition-colors ${
+                    className={`w-11 h-11 rounded-xl flex items-center justify-center shrink-0 transition-colors ${
                       selectedRole === 'worker'
                         ? 'bg-amber-500 text-slate-950'
-                        : 'bg-slate-100 text-slate-600'
+                        : 'bg-white text-slate-600 border border-slate-200'
                     }`}
                   >
-                    <HardHat className="w-6 h-6 stroke-[2.2]" />
+                    <HardHat className="w-5 h-5 stroke-[2.2]" />
                   </div>
                   <div className="space-y-1 flex-1 min-w-0">
-                    <div className="flex items-center justify-between">
-                      <h3 className="text-base font-bold text-slate-900">
+                    <div className="flex items-center justify-between gap-2">
+                      <h3 className="text-sm sm:text-base font-bold text-slate-900">
                         {t('roleWorker', currentLanguage)}
                       </h3>
                       {selectedRole === 'worker' && (
@@ -983,57 +1014,79 @@ export const VerificationFlow: React.FC<VerificationFlowProps> = ({
                       )}
                     </div>
                     <p className="text-xs text-slate-600 leading-relaxed">
-                      Receive daily customer bookings, subcontract work, showcase your portfolio & get direct calls.
+                      Receive daily bookings, subcontract jobs, showcase your work &amp; get direct calls.
                     </p>
-                    <div className="pt-1.5 flex flex-wrap gap-1.5">
-                      <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-amber-100 text-amber-900 rounded-md text-[10px] font-bold">
-                        🛡️ Aadhaar KYC Verified
-                      </span>
-                      <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-blue-100 text-blue-800 rounded-md text-[10px] font-bold">
-                        ⭐ Verified Karigar Badge
-                      </span>
-                    </div>
+                    <p className="text-[11px] text-slate-500 font-medium pt-0.5">
+                      Aadhaar KYC · Verified Karigar Profile
+                    </p>
                   </div>
                 </div>
-              </div>
-            </div>
-
-            <div className="pt-3">
-              <button
-                type="button"
-                onClick={handleAccountTypeContinue}
-                className="w-full py-3.5 px-5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl shadow-md transition-all flex items-center justify-center gap-2 text-sm active:scale-[0.98] cursor-pointer"
-              >
-                <span>
-                  {selectedRole === 'customer'
-                    ? 'Continue as Customer (Grahak)'
-                    : 'Register as Mestri / Contractor'}
-                </span>
-                <ArrowRight className="w-4 h-4" />
               </button>
             </div>
+
+            <button
+              type="button"
+              onClick={handleAccountTypeContinue}
+              className="w-full min-h-[48px] py-3.5 px-5 bg-[#1E3A8A] hover:bg-blue-900 text-white font-bold rounded-xl shadow-sm transition-colors flex items-center justify-center gap-2 text-sm cursor-pointer whitespace-nowrap"
+            >
+              <span>
+                {selectedRole === 'customer'
+                  ? 'Continue to Customer Login'
+                  : 'Continue to Worker Login'}
+              </span>
+              <ArrowRight className="w-4 h-4 shrink-0" />
+            </button>
           </motion.div>
         )}
 
         {/* ========================================================================= */}
-        {/* 2. CUSTOMER FLOW: CLEAN MOBILE NUMBER & REAL FIREBASE SMS OTP             */}
+        {/* 2. CUSTOMER LOGIN SCREEN (WHITE CONTAINER CARD ON DEEP BLUE)              */}
         {/* ========================================================================= */}
         {step === 'customer_phone' && (
           <motion.div
             key="customer_phone"
-            initial={{ opacity: 0, x: 20 }}
-            animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: -20 }}
-            className="space-y-5 my-auto"
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -12 }}
+            transition={{ duration: 0.18 }}
+            className="w-full bg-white text-slate-900 rounded-3xl p-5 sm:p-6 shadow-xl space-y-5"
           >
-            <div className="text-center space-y-1.5">
-              <div className="w-14 h-14 bg-blue-100 text-blue-700 rounded-2xl mx-auto flex items-center justify-center border border-blue-200 shadow-xs">
-                <Home className="w-7 h-7" />
+            {/* Role Tab Switcher Inside White Card for Instant Switching */}
+            <div className="grid grid-cols-2 gap-1 p-1 bg-slate-100 rounded-xl">
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedRole('customer');
+                  setFirebaseOtpError(null);
+                  setStep('customer_phone');
+                }}
+                className="min-h-[40px] px-3 py-2 rounded-lg text-xs font-bold bg-white text-[#1E3A8A] shadow-2xs transition-colors cursor-pointer whitespace-nowrap"
+              >
+                Customer Login
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedRole('worker');
+                  setFirebaseOtpError(null);
+                  setStep('worker_phone');
+                }}
+                className="min-h-[40px] px-3 py-2 rounded-lg text-xs font-semibold text-slate-600 hover:text-slate-900 transition-colors cursor-pointer whitespace-nowrap"
+              >
+                Worker Login
+              </button>
+            </div>
+
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 bg-blue-50 text-[#1E3A8A] rounded-2xl flex items-center justify-center border border-blue-100 shrink-0">
+                <Home className="w-6 h-6" />
               </div>
-              <h3 className="text-xl font-bold text-slate-900">Customer Login</h3>
-              <p className="text-xs text-slate-500 font-normal">
-                Enter your 10-digit mobile number to receive a 6-digit SMS verification code
-              </p>
+              <div>
+                <h2 className="text-lg sm:text-xl font-bold text-slate-900">Customer Login</h2>
+                <p className="text-xs text-slate-500">
+                  Enter your mobile number to receive a 6-digit SMS OTP
+                </p>
+              </div>
             </div>
 
             <form onSubmit={handleCustomerPhoneSubmit} className="space-y-4">
@@ -1042,7 +1095,9 @@ export const VerificationFlow: React.FC<VerificationFlowProps> = ({
                   Mobile Number
                 </label>
                 <div className="relative flex items-center">
-                  <span className="absolute left-3.5 text-sm font-bold text-blue-700">+91</span>
+                  <span className="absolute left-3.5 text-sm font-bold text-[#1E3A8A] select-none">
+                    +91
+                  </span>
                   <input
                     type="tel"
                     inputMode="numeric"
@@ -1055,7 +1110,7 @@ export const VerificationFlow: React.FC<VerificationFlowProps> = ({
                       if (firebaseOtpError) setFirebaseOtpError(null);
                     }}
                     placeholder="Enter 10-digit mobile number"
-                    className="w-full pl-14 pr-4 py-3.5 bg-white border border-slate-200 rounded-xl text-base font-mono text-slate-900 tracking-wider focus:outline-none focus:border-blue-600 shadow-xs"
+                    className="w-full min-h-[48px] pl-14 pr-4 py-3 bg-slate-50 border border-slate-300 rounded-xl text-base font-mono tabular-nums text-slate-900 tracking-wider focus:bg-white focus:outline-none focus:border-[#1E3A8A] focus:ring-2 focus:ring-blue-900/15"
                   />
                 </div>
               </div>
@@ -1076,16 +1131,16 @@ export const VerificationFlow: React.FC<VerificationFlowProps> = ({
                 type="submit"
                 id="btn-customer-firebase-otp"
                 disabled={phone.length < 10 || isSendingFirebaseOtp}
-                className="w-full py-3.5 bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold rounded-xl shadow-md transition-all flex items-center justify-center gap-2 text-sm disabled:opacity-50 cursor-pointer"
+                className="w-full min-h-[48px] py-3.5 px-5 bg-[#1E3A8A] hover:bg-blue-900 text-white font-bold rounded-xl shadow-sm transition-colors flex items-center justify-center gap-2 text-sm disabled:opacity-50 cursor-pointer whitespace-nowrap"
               >
                 {isSendingFirebaseOtp ? (
                   <>
-                    <Loader2 className="w-4 h-4 animate-spin text-slate-950" />
+                    <Loader2 className="w-4 h-4 animate-spin text-white" />
                     <span>Sending SMS OTP...</span>
                   </>
                 ) : (
                   <>
-                    <Phone className="w-4 h-4 text-slate-950" />
+                    <Phone className="w-4 h-4 text-amber-300" />
                     <span>Send 6-Digit SMS OTP</span>
                     <ArrowRight className="w-4 h-4" />
                   </>
@@ -1096,32 +1151,29 @@ export const VerificationFlow: React.FC<VerificationFlowProps> = ({
         )}
 
         {/* ========================================================================= */}
-        {/* 2B. CUSTOMER FLOW: VERIFY 6-DIGIT SMS OTP                                 */}
+        {/* 2B. CUSTOMER OTP VERIFICATION (WHITE CONTAINER CARD ON DEEP BLUE)         */}
         {/* ========================================================================= */}
         {step === 'customer_otp' && (
           <motion.div
             key="customer_otp"
-            initial={{ opacity: 0, x: 20 }}
-            animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: -20 }}
-            className="space-y-4 my-auto"
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -12 }}
+            transition={{ duration: 0.18 }}
+            className="w-full bg-white text-slate-900 rounded-3xl p-5 sm:p-6 shadow-xl space-y-4"
           >
-            <div className="text-center space-y-1.5">
-              <div className="w-14 h-14 bg-amber-500 text-slate-950 rounded-2xl mx-auto flex items-center justify-center shadow-md shadow-amber-200">
-                <Phone className="w-7 h-7 text-slate-950" />
-              </div>
-              <h3 className="text-xl font-bold text-slate-900">Verify 6-Digit SMS OTP</h3>
-              <p className="text-xs text-slate-600 font-medium">
-                Enter the 6-digit verification code sent via SMS to:
+            <div className="space-y-1">
+              <h2 className="text-lg sm:text-xl font-bold text-slate-900">
+                Verify 6-Digit SMS OTP
+              </h2>
+              <p className="text-xs text-slate-600">
+                Code sent via SMS to{' '}
+                <strong className="font-mono tabular-nums text-slate-900">+91 {phone}</strong>
               </p>
-              <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-amber-50 border border-amber-200 rounded-full text-xs font-mono font-bold text-amber-900">
-                <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
-                <span>+91 {phone}</span>
-              </div>
             </div>
 
             {firebaseOtpSuccess && !firebaseOtpError && (
-              <div className="p-2.5 bg-emerald-50 border border-emerald-200 rounded-xl text-center text-xs text-emerald-800 font-medium flex items-center justify-center gap-1.5">
+              <div className="p-2.5 bg-emerald-50 border border-emerald-200 rounded-xl text-xs text-emerald-800 font-medium flex items-center gap-2">
                 <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
                 <span>{firebaseOtpSuccess}</span>
               </div>
@@ -1138,7 +1190,7 @@ export const VerificationFlow: React.FC<VerificationFlowProps> = ({
             )}
 
             <form onSubmit={handleCustomerOtpVerify} className="space-y-4">
-              <div className="flex justify-center gap-2">
+              <div className="flex justify-between gap-2">
                 {otp.map((digit, idx) => (
                   <input
                     key={idx}
@@ -1153,29 +1205,28 @@ export const VerificationFlow: React.FC<VerificationFlowProps> = ({
                     onChange={(e) => handleOtpInputChange(idx, e.target.value)}
                     onKeyDown={(e) => handleOtpKeyDown(idx, e)}
                     onPaste={handleOtpPaste}
-                    className={`w-11 h-12 text-center text-xl font-bold font-mono bg-white border rounded-xl text-amber-600 focus:outline-none focus:border-amber-500 shadow-xs transition-colors ${
-                      firebaseOtpError ? 'border-rose-300 ring-1 ring-rose-200' : 'border-slate-200'
+                    className={`w-11 h-12 sm:w-12 sm:h-13 text-center text-xl font-bold font-mono tabular-nums bg-slate-50 border rounded-xl text-[#1E3A8A] focus:bg-white focus:outline-none focus:border-[#1E3A8A] focus:ring-2 focus:ring-blue-900/15 transition-colors ${
+                      firebaseOtpError ? 'border-rose-300' : 'border-slate-300'
                     }`}
                   />
                 ))}
               </div>
 
-              <div className="flex items-center justify-between text-xs px-1">
+              <div className="flex items-center justify-between text-xs pt-0.5">
                 <span className="text-slate-500">Didn&apos;t receive SMS?</span>
                 {canResend ? (
                   <button
                     type="button"
                     onClick={() => handleResendFirebaseOtp('customer')}
                     disabled={isSendingFirebaseOtp}
-                    className="text-amber-700 font-bold hover:text-amber-800 flex items-center gap-1 cursor-pointer transition-colors"
+                    className="min-h-[36px] px-2 text-[#1E3A8A] font-bold hover:underline flex items-center gap-1 cursor-pointer whitespace-nowrap"
                   >
                     <RotateCw className={`w-3.5 h-3.5 ${isSendingFirebaseOtp ? 'animate-spin' : ''}`} />
                     <span>Resend SMS OTP</span>
                   </button>
                 ) : (
-                  <span className="font-semibold text-slate-500 font-mono flex items-center gap-1">
-                    <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-ping" />
-                    Resend SMS in <strong>{resendCountdown}s</strong>
+                  <span className="font-semibold text-slate-600 font-mono tabular-nums">
+                    Resend in {resendCountdown}s
                   </span>
                 )}
               </div>
@@ -1183,16 +1234,16 @@ export const VerificationFlow: React.FC<VerificationFlowProps> = ({
               <button
                 type="submit"
                 disabled={otp.join('').length !== 6 || isVerifyingFirebaseOtp}
-                className="w-full py-3.5 bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold rounded-xl shadow-md transition-all flex items-center justify-center gap-2 text-sm disabled:opacity-50 cursor-pointer"
+                className="w-full min-h-[48px] py-3.5 px-5 bg-[#1E3A8A] hover:bg-blue-900 text-white font-bold rounded-xl shadow-sm transition-colors flex items-center justify-center gap-2 text-sm disabled:opacity-50 cursor-pointer whitespace-nowrap"
               >
                 {isVerifyingFirebaseOtp ? (
                   <>
-                    <Loader2 className="w-4 h-4 animate-spin text-slate-950" />
+                    <Loader2 className="w-4 h-4 animate-spin text-white" />
                     <span>Verifying SMS OTP...</span>
                   </>
                 ) : (
                   <>
-                    <span>Verify OTP & Continue</span>
+                    <span>Verify OTP &amp; Continue</span>
                     <ArrowRight className="w-4 h-4" />
                   </>
                 )}
@@ -1202,24 +1253,55 @@ export const VerificationFlow: React.FC<VerificationFlowProps> = ({
         )}
 
         {/* ========================================================================= */}
-        {/* 3. WORKER FLOW: CLEAN MOBILE NUMBER & REAL FIREBASE SMS OTP               */}
+        {/* 3. WORKER LOGIN SCREEN (WHITE CONTAINER CARD ON DEEP BLUE)                */}
         {/* ========================================================================= */}
         {step === 'worker_phone' && (
           <motion.div
             key="worker_phone"
-            initial={{ opacity: 0, x: 20 }}
-            animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: -20 }}
-            className="space-y-5 my-auto"
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -12 }}
+            transition={{ duration: 0.18 }}
+            className="w-full bg-white text-slate-900 rounded-3xl p-5 sm:p-6 shadow-xl space-y-5"
           >
-            <div className="text-center space-y-1.5">
-              <div className="w-14 h-14 bg-amber-100 text-amber-800 rounded-2xl mx-auto flex items-center justify-center border border-amber-200 shadow-xs">
-                <HardHat className="w-7 h-7" />
+            {/* Role Tab Switcher Inside White Card */}
+            <div className="grid grid-cols-2 gap-1 p-1 bg-slate-100 rounded-xl">
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedRole('customer');
+                  setFirebaseOtpError(null);
+                  setStep('customer_phone');
+                }}
+                className="min-h-[40px] px-3 py-2 rounded-lg text-xs font-semibold text-slate-600 hover:text-slate-900 transition-colors cursor-pointer whitespace-nowrap"
+              >
+                Customer Login
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedRole('worker');
+                  setFirebaseOtpError(null);
+                  setStep('worker_phone');
+                }}
+                className="min-h-[40px] px-3 py-2 rounded-lg text-xs font-bold bg-white text-[#1E3A8A] shadow-2xs transition-colors cursor-pointer whitespace-nowrap"
+              >
+                Worker Login
+              </button>
+            </div>
+
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 bg-amber-50 text-amber-800 rounded-2xl flex items-center justify-center border border-amber-200 shrink-0">
+                <HardHat className="w-6 h-6" />
               </div>
-              <h3 className="text-xl font-bold text-slate-900">Karigar / Contractor Login</h3>
-              <p className="text-xs text-slate-500 font-normal">
-                Enter your 10-digit mobile number to receive a 6-digit SMS verification code
-              </p>
+              <div>
+                <h2 className="text-lg sm:text-xl font-bold text-slate-900">
+                  Worker / Karigar Login
+                </h2>
+                <p className="text-xs text-slate-500">
+                  Enter your mobile number to receive a 6-digit SMS OTP
+                </p>
+              </div>
             </div>
 
             <form onSubmit={handleWorkerPhoneSubmit} className="space-y-4">
@@ -1228,7 +1310,9 @@ export const VerificationFlow: React.FC<VerificationFlowProps> = ({
                   Mobile Number
                 </label>
                 <div className="relative flex items-center">
-                  <span className="absolute left-3.5 text-sm font-bold text-blue-700">+91</span>
+                  <span className="absolute left-3.5 text-sm font-bold text-[#1E3A8A] select-none">
+                    +91
+                  </span>
                   <input
                     type="tel"
                     inputMode="numeric"
@@ -1241,7 +1325,7 @@ export const VerificationFlow: React.FC<VerificationFlowProps> = ({
                       if (firebaseOtpError) setFirebaseOtpError(null);
                     }}
                     placeholder="Enter 10-digit mobile number"
-                    className="w-full pl-14 pr-4 py-3.5 bg-white border border-slate-200 rounded-xl text-base font-mono text-slate-900 tracking-wider focus:outline-none focus:border-blue-600 shadow-xs"
+                    className="w-full min-h-[48px] pl-14 pr-4 py-3 bg-slate-50 border border-slate-300 rounded-xl text-base font-mono tabular-nums text-slate-900 tracking-wider focus:bg-white focus:outline-none focus:border-[#1E3A8A] focus:ring-2 focus:ring-blue-900/15"
                   />
                 </div>
               </div>
@@ -1262,7 +1346,7 @@ export const VerificationFlow: React.FC<VerificationFlowProps> = ({
                 type="submit"
                 id="btn-worker-firebase-otp"
                 disabled={phone.length < 10 || isSendingFirebaseOtp}
-                className="w-full py-3.5 bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold rounded-xl shadow-md transition-all flex items-center justify-center gap-2 text-sm disabled:opacity-50 cursor-pointer"
+                className="w-full min-h-[48px] py-3.5 px-5 bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold rounded-xl shadow-sm transition-colors flex items-center justify-center gap-2 text-sm disabled:opacity-50 cursor-pointer whitespace-nowrap"
               >
                 {isSendingFirebaseOtp ? (
                   <>
@@ -1282,32 +1366,29 @@ export const VerificationFlow: React.FC<VerificationFlowProps> = ({
         )}
 
         {/* ========================================================================= */}
-        {/* 3B. WORKER FLOW: VERIFY 6-DIGIT SMS OTP                                   */}
+        {/* 3B. WORKER OTP VERIFICATION (WHITE CONTAINER CARD ON DEEP BLUE)           */}
         {/* ========================================================================= */}
         {step === 'worker_otp' && (
           <motion.div
             key="worker_otp"
-            initial={{ opacity: 0, x: 20 }}
-            animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: -20 }}
-            className="space-y-4 my-auto"
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -12 }}
+            transition={{ duration: 0.18 }}
+            className="w-full bg-white text-slate-900 rounded-3xl p-5 sm:p-6 shadow-xl space-y-4"
           >
-            <div className="text-center space-y-1.5">
-              <div className="w-14 h-14 bg-amber-500 text-slate-950 rounded-2xl mx-auto flex items-center justify-center shadow-md shadow-amber-200">
-                <Phone className="w-7 h-7 text-slate-950" />
-              </div>
-              <h3 className="text-xl font-bold text-slate-900">Verify 6-Digit SMS OTP</h3>
-              <p className="text-xs text-slate-600 font-medium">
-                Enter the 6-digit verification code sent via SMS to:
+            <div className="space-y-1">
+              <h2 className="text-lg sm:text-xl font-bold text-slate-900">
+                Verify 6-Digit SMS OTP
+              </h2>
+              <p className="text-xs text-slate-600">
+                Code sent via SMS to{' '}
+                <strong className="font-mono tabular-nums text-slate-900">+91 {phone}</strong>
               </p>
-              <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-amber-50 border border-amber-200 rounded-full text-xs font-mono font-bold text-amber-900">
-                <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
-                <span>+91 {phone}</span>
-              </div>
             </div>
 
             {firebaseOtpSuccess && !firebaseOtpError && (
-              <div className="p-2.5 bg-emerald-50 border border-emerald-200 rounded-xl text-center text-xs text-emerald-800 font-medium flex items-center justify-center gap-1.5">
+              <div className="p-2.5 bg-emerald-50 border border-emerald-200 rounded-xl text-xs text-emerald-800 font-medium flex items-center gap-2">
                 <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
                 <span>{firebaseOtpSuccess}</span>
               </div>
@@ -1324,7 +1405,7 @@ export const VerificationFlow: React.FC<VerificationFlowProps> = ({
             )}
 
             <form onSubmit={handleWorkerOtpVerify} className="space-y-4">
-              <div className="flex justify-center gap-2">
+              <div className="flex justify-between gap-2">
                 {otp.map((digit, idx) => (
                   <input
                     key={idx}
@@ -1339,29 +1420,28 @@ export const VerificationFlow: React.FC<VerificationFlowProps> = ({
                     onChange={(e) => handleOtpInputChange(idx, e.target.value)}
                     onKeyDown={(e) => handleOtpKeyDown(idx, e)}
                     onPaste={handleOtpPaste}
-                    className={`w-11 h-12 text-center text-xl font-bold font-mono bg-white border rounded-xl text-amber-600 focus:outline-none focus:border-amber-500 shadow-xs transition-colors ${
-                      firebaseOtpError ? 'border-rose-300 ring-1 ring-rose-200' : 'border-slate-200'
+                    className={`w-11 h-12 sm:w-12 sm:h-13 text-center text-xl font-bold font-mono tabular-nums bg-slate-50 border rounded-xl text-[#1E3A8A] focus:bg-white focus:outline-none focus:border-[#1E3A8A] focus:ring-2 focus:ring-blue-900/15 transition-colors ${
+                      firebaseOtpError ? 'border-rose-300' : 'border-slate-300'
                     }`}
                   />
                 ))}
               </div>
 
-              <div className="flex items-center justify-between text-xs px-1">
+              <div className="flex items-center justify-between text-xs pt-0.5">
                 <span className="text-slate-500">Didn&apos;t receive SMS?</span>
                 {canResend ? (
                   <button
                     type="button"
                     onClick={() => handleResendFirebaseOtp('worker')}
                     disabled={isSendingFirebaseOtp}
-                    className="text-amber-700 font-bold hover:text-amber-800 flex items-center gap-1 cursor-pointer transition-colors"
+                    className="min-h-[36px] px-2 text-[#1E3A8A] font-bold hover:underline flex items-center gap-1 cursor-pointer whitespace-nowrap"
                   >
                     <RotateCw className={`w-3.5 h-3.5 ${isSendingFirebaseOtp ? 'animate-spin' : ''}`} />
                     <span>Resend SMS OTP</span>
                   </button>
                 ) : (
-                  <span className="font-semibold text-slate-500 font-mono flex items-center gap-1">
-                    <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-ping" />
-                    Resend SMS in <strong>{resendCountdown}s</strong>
+                  <span className="font-semibold text-slate-600 font-mono tabular-nums">
+                    Resend in {resendCountdown}s
                   </span>
                 )}
               </div>
@@ -1369,7 +1449,7 @@ export const VerificationFlow: React.FC<VerificationFlowProps> = ({
               <button
                 type="submit"
                 disabled={otp.join('').length !== 6 || isVerifyingFirebaseOtp}
-                className="w-full py-3.5 bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold rounded-xl shadow-md transition-all flex items-center justify-center gap-2 text-sm disabled:opacity-50 cursor-pointer"
+                className="w-full min-h-[48px] py-3.5 px-5 bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold rounded-xl shadow-sm transition-colors flex items-center justify-center gap-2 text-sm disabled:opacity-50 cursor-pointer whitespace-nowrap"
               >
                 {isVerifyingFirebaseOtp ? (
                   <>
@@ -1378,7 +1458,7 @@ export const VerificationFlow: React.FC<VerificationFlowProps> = ({
                   </>
                 ) : (
                   <>
-                    <span>Verify OTP & Continue</span>
+                    <span>Verify OTP &amp; Continue</span>
                     <ArrowRight className="w-4 h-4" />
                   </>
                 )}
@@ -1388,42 +1468,45 @@ export const VerificationFlow: React.FC<VerificationFlowProps> = ({
         )}
 
         {/* ========================================================================= */}
-        {/* 3C. WORKER FLOW: PROFESSIONAL DETAILS                                     */}
+        {/* 3C. WORKER PROFESSIONAL DETAILS (WHITE CARD ON DEEP BLUE)                 */}
         {/* ========================================================================= */}
         {step === 'worker_details' && (
           <motion.div
             key="worker_details"
-            initial={{ opacity: 0, x: 20 }}
-            animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: -20 }}
-            className="space-y-3.5 my-auto"
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -12 }}
+            transition={{ duration: 0.18 }}
+            className="w-full bg-white text-slate-900 rounded-3xl p-5 sm:p-6 shadow-xl space-y-4"
           >
-            <div className="text-center space-y-1">
-              <div className="w-12 h-12 bg-blue-100 text-blue-700 rounded-2xl mx-auto flex items-center justify-center border border-blue-200 shadow-xs">
-                <Briefcase className="w-6 h-6" />
+            <div className="flex items-center gap-3">
+              <div className="w-11 h-11 bg-blue-50 text-[#1E3A8A] rounded-2xl flex items-center justify-center border border-blue-100 shrink-0">
+                <Briefcase className="w-5 h-5" />
               </div>
-              <h3 className="text-lg sm:text-xl font-bold text-slate-900">
-                Karigar Professional Details
-              </h3>
-              <p className="text-xs text-slate-500 font-normal">
-                Provide your core trade skill and service area pincode
-              </p>
+              <div>
+                <h3 className="text-lg font-bold text-slate-900">
+                  Karigar Professional Details
+                </h3>
+                <p className="text-xs text-slate-500">
+                  Provide your trade skill and service area pincode
+                </p>
+              </div>
             </div>
 
-            <form onSubmit={handleWorkerDetailsSubmit} className="space-y-3">
+            <form onSubmit={handleWorkerDetailsSubmit} className="space-y-3.5">
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1">
                   Full Name (पूरा नाम) *
                 </label>
                 <div className="relative flex items-center">
-                  <User className="absolute left-3 w-4 h-4 text-slate-400" />
+                  <User className="absolute left-3.5 w-4 h-4 text-slate-400" />
                   <input
                     type="text"
                     required
                     value={fullName}
                     onChange={(e) => setFullName(e.target.value)}
                     placeholder="Enter your full name"
-                    className="w-full pl-9 pr-3.5 py-2.5 bg-white border border-slate-200 rounded-xl text-slate-900 font-medium text-sm focus:outline-none focus:border-blue-600 shadow-2xs"
+                    className="w-full min-h-[44px] pl-10 pr-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-slate-900 font-medium text-sm focus:bg-white focus:outline-none focus:border-[#1E3A8A]"
                   />
                 </div>
               </div>
@@ -1433,11 +1516,11 @@ export const VerificationFlow: React.FC<VerificationFlowProps> = ({
                   Primary Skill / Category (मुख्य काम) *
                 </label>
                 <div className="relative flex items-center">
-                  <Wrench className="absolute left-3 w-4 h-4 text-slate-400 pointer-events-none" />
+                  <Wrench className="absolute left-3.5 w-4 h-4 text-slate-400 pointer-events-none" />
                   <select
                     value={primarySkill}
                     onChange={(e) => setPrimarySkill(e.target.value as TradeCategory)}
-                    className="w-full pl-9 pr-4 py-2.5 bg-white border border-slate-200 rounded-xl text-slate-900 font-semibold text-sm focus:outline-none focus:border-blue-600 shadow-2xs appearance-none cursor-pointer"
+                    className="w-full min-h-[44px] pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-slate-900 font-semibold text-sm focus:bg-white focus:outline-none focus:border-[#1E3A8A] appearance-none cursor-pointer"
                   >
                     {WORKER_SKILL_OPTIONS.map((skill) => (
                       <option key={skill.id} value={skill.id}>
@@ -1448,7 +1531,7 @@ export const VerificationFlow: React.FC<VerificationFlowProps> = ({
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-2.5">
+              <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-semibold text-slate-700 mb-1">
                     Experience (Years) *
@@ -1462,16 +1545,16 @@ export const VerificationFlow: React.FC<VerificationFlowProps> = ({
                     onChange={(e) =>
                       setExperienceYears(Math.max(1, parseInt(e.target.value, 10) || 1))
                     }
-                    className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-slate-900 font-bold text-sm focus:outline-none focus:border-blue-600 shadow-2xs"
+                    className="w-full min-h-[44px] px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-slate-900 font-bold font-mono tabular-nums text-sm focus:bg-white focus:outline-none focus:border-[#1E3A8A]"
                   />
                 </div>
 
                 <div>
                   <label className="block text-xs font-semibold text-slate-700 mb-1">
-                    Service Area Pincode *
+                    Area Pincode *
                   </label>
                   <div className="relative flex items-center">
-                    <MapPin className="absolute left-2.5 w-3.5 h-3.5 text-slate-400" />
+                    <MapPin className="absolute left-3 w-3.5 h-3.5 text-slate-400" />
                     <input
                       type="text"
                       inputMode="numeric"
@@ -1480,7 +1563,7 @@ export const VerificationFlow: React.FC<VerificationFlowProps> = ({
                       value={pincode}
                       onChange={(e) => setPincode(e.target.value.replace(/\D/g, '').slice(0, 6))}
                       placeholder="6-digit PIN"
-                      className="w-full pl-8 pr-2.5 py-2.5 bg-white border border-slate-200 rounded-xl text-slate-900 font-mono font-bold text-sm focus:outline-none focus:border-blue-600 shadow-2xs"
+                      className="w-full min-h-[44px] pl-8 pr-2.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-slate-900 font-mono tabular-nums font-bold text-sm focus:bg-white focus:outline-none focus:border-[#1E3A8A]"
                     />
                   </div>
                 </div>
@@ -1489,9 +1572,9 @@ export const VerificationFlow: React.FC<VerificationFlowProps> = ({
               <button
                 type="submit"
                 disabled={fullName.trim().length < 2 || pincode.length !== 6}
-                className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl shadow-md transition-all flex items-center justify-center gap-2 text-sm disabled:opacity-50 cursor-pointer mt-2"
+                className="w-full min-h-[48px] py-3.5 bg-[#1E3A8A] hover:bg-blue-900 text-white font-bold rounded-xl shadow-sm transition-colors flex items-center justify-center gap-2 text-sm disabled:opacity-50 cursor-pointer mt-2 whitespace-nowrap"
               >
-                <span>Proceed to Aadhaar KYC Verification</span>
+                <span>Proceed to Aadhaar KYC</span>
                 <ArrowRight className="w-4 h-4" />
               </button>
             </form>
@@ -1499,59 +1582,53 @@ export const VerificationFlow: React.FC<VerificationFlowProps> = ({
         )}
 
         {/* ========================================================================= */}
-        {/* 3D. WORKER FLOW: AADHAAR KYC DOCUMENT CAMERA CAPTURE                      */}
+        {/* 3D. WORKER AADHAAR KYC CAMERA CAPTURE (WHITE CARD ON DEEP BLUE)           */}
         {/* ========================================================================= */}
         {step === 'worker_kyc' && (
           <motion.div
             key="worker_kyc"
-            initial={{ opacity: 0, x: 20 }}
-            animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: -20 }}
-            className="space-y-3.5 my-auto"
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -12 }}
+            transition={{ duration: 0.18 }}
+            className="w-full bg-white text-slate-900 rounded-3xl p-5 sm:p-6 shadow-xl space-y-3.5"
           >
-            <div className="text-center space-y-1">
-              <div className="w-12 h-12 bg-blue-100 text-blue-700 rounded-2xl mx-auto flex items-center justify-center border border-blue-200 shadow-xs">
-                <ShieldCheck className="w-6 h-6" />
+            <div className="flex items-center gap-3">
+              <div className="w-11 h-11 bg-blue-50 text-[#1E3A8A] rounded-2xl flex items-center justify-center border border-blue-100 shrink-0">
+                <ShieldCheck className="w-5 h-5" />
               </div>
-              <h3 className="text-lg sm:text-xl font-bold text-slate-900">
-                Aadhaar KYC Verification
-              </h3>
-              <p className="text-xs text-slate-500 font-normal">
-                Capture clear photos of your Aadhaar card using your phone camera
-              </p>
+              <div>
+                <h3 className="text-lg font-bold text-slate-900">Aadhaar KYC Verification</h3>
+                <p className="text-xs text-slate-500">
+                  Capture Front and Back photos of your Aadhaar card
+                </p>
+              </div>
             </div>
 
-            <div className="p-3 bg-blue-50/90 border border-blue-200 rounded-2xl space-y-1 shadow-2xs">
-              <div className="flex items-center gap-1.5 text-blue-900 font-bold text-xs">
-                <Lock className="w-4 h-4 text-blue-700 shrink-0" />
-                <span>Privacy Protected</span>
+            <div className="p-3 bg-blue-50/70 border border-blue-100 rounded-xl space-y-0.5">
+              <div className="flex items-center gap-1.5 text-[#1E3A8A] font-bold text-xs">
+                <Lock className="w-3.5 h-3.5 shrink-0" />
+                <span>Encrypted Identity Verification</span>
               </div>
-              <p className="text-[11px] text-blue-800 leading-relaxed font-normal">
-                Your Aadhaar photos and numbers are encrypted and never displayed to customers. Customers only see your <strong>Verified Karigar</strong> badge.
+              <p className="text-[11px] text-slate-600 leading-relaxed">
+                Aadhaar details remain private and are never shown to customers. Customers only see your Verified Karigar status.
               </p>
             </div>
 
             {isAadhaarVerified && (
-              <div className="p-3 bg-emerald-50 border border-emerald-300 rounded-2xl flex items-center justify-between gap-2 shadow-2xs">
+              <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl flex items-center justify-between gap-2">
                 <div className="flex items-center gap-2">
-                  <div className="p-1.5 bg-emerald-600 text-white rounded-full">
-                    <Check className="w-4 h-4 stroke-[3]" />
-                  </div>
-                  <div>
-                    <h4 className="text-xs font-bold text-emerald-950">
-                      Aadhaar Front &amp; Back Captured
-                    </h4>
-                    <p className="text-[10px] text-emerald-700 font-medium">
-                      Ready for profile selfie verification
-                    </p>
-                  </div>
+                  <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
+                  <span className="text-xs font-bold text-emerald-950">
+                    Aadhaar Front &amp; Back Captured
+                  </span>
                 </div>
-                <BadgeCheck className="w-6 h-6 text-emerald-600 shrink-0" />
+                <BadgeCheck className="w-5 h-5 text-emerald-600 shrink-0" />
               </div>
             )}
 
-            <div className="space-y-1.5 p-3.5 bg-white border border-slate-200 rounded-2xl shadow-2xs">
-              <label className="block text-xs font-bold text-slate-800">
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1">
                 Aadhaar Number (12 Digits)
               </label>
               <input
@@ -1561,12 +1638,12 @@ export const VerificationFlow: React.FC<VerificationFlowProps> = ({
                 value={aadhaarNumber}
                 onChange={(e) => setAadhaarNumber(e.target.value.replace(/\D/g, '').slice(0, 12))}
                 placeholder="Enter 12-digit Aadhaar number"
-                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 font-mono text-xs focus:outline-none focus:border-blue-600 tracking-wider"
+                className="w-full min-h-[44px] px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-slate-900 font-mono tabular-nums text-xs focus:bg-white focus:outline-none focus:border-[#1E3A8A] tracking-wider"
               />
             </div>
 
             {aadhaarUploadError && (
-              <div className="p-2.5 bg-rose-50 border border-rose-300 rounded-xl flex items-center gap-2 text-rose-800 text-xs font-semibold">
+              <div className="p-2.5 bg-rose-50 border border-rose-200 rounded-xl flex items-center gap-2 text-rose-800 text-xs font-semibold">
                 <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
                 <span>{aadhaarUploadError}</span>
               </div>
@@ -1574,15 +1651,15 @@ export const VerificationFlow: React.FC<VerificationFlowProps> = ({
 
             <div className="space-y-3">
               {/* 1. Aadhaar Front Photo */}
-              <div className="p-3 bg-white border border-slate-200 rounded-2xl shadow-2xs space-y-2">
+              <div className="p-3 bg-slate-50 border border-slate-200 rounded-2xl space-y-2">
                 <div className="flex items-center justify-between">
                   <label className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
-                    <FileText className="w-3.5 h-3.5 text-blue-600" />
-                    <span>1. Aadhaar Front Photo (Name, Photo &amp; DOB) *</span>
+                    <FileText className="w-3.5 h-3.5 text-[#1E3A8A]" />
+                    <span>1. Aadhaar Front Photo *</span>
                   </label>
                   {aadhaarFrontUrl && (
-                    <span className="text-[10px] text-emerald-700 font-bold flex items-center gap-0.5">
-                      <Check className="w-3 h-3 text-emerald-600 stroke-[3]" /> Captured
+                    <span className="text-[11px] text-emerald-700 font-bold flex items-center gap-1">
+                      <Check className="w-3.5 h-3.5 text-emerald-600 stroke-[3]" /> Captured
                     </span>
                   )}
                 </div>
@@ -1597,24 +1674,22 @@ export const VerificationFlow: React.FC<VerificationFlowProps> = ({
                 />
 
                 {aadhaarFrontUrl ? (
-                  <div className="flex items-center justify-between p-2 bg-slate-50 rounded-xl border border-slate-200">
-                    <div className="flex items-center gap-2 min-w-0">
+                  <div className="flex items-center justify-between p-2 bg-white rounded-xl border border-slate-200">
+                    <div className="flex items-center gap-2.5 min-w-0">
                       <img
                         src={aadhaarFrontUrl}
                         alt="Aadhaar Front"
-                        className="w-14 h-10 object-cover rounded-lg border border-slate-300 shrink-0"
+                        referrerPolicy="no-referrer"
+                        className="w-14 h-10 object-cover rounded-lg border border-slate-200 shrink-0"
                       />
-                      <div className="min-w-0">
-                        <p className="text-xs font-bold text-slate-800 truncate">
-                          Aadhaar Front Attached
-                        </p>
-                        <p className="text-[10px] text-slate-500">Captured from device</p>
-                      </div>
+                      <span className="text-xs font-semibold text-slate-800 truncate">
+                        Front Card Attached
+                      </span>
                     </div>
                     <button
                       type="button"
                       onClick={() => handleCapacitorCameraCapture('front')}
-                      className="p-1.5 px-2.5 bg-blue-50 text-blue-700 hover:bg-blue-100 rounded-lg text-xs font-bold flex items-center gap-1 cursor-pointer"
+                      className="min-h-[36px] px-2.5 bg-blue-50 text-[#1E3A8A] hover:bg-blue-100 rounded-lg text-xs font-bold flex items-center gap-1 cursor-pointer whitespace-nowrap"
                     >
                       <Camera className="w-3.5 h-3.5" />
                       <span>Retake</span>
@@ -1625,7 +1700,7 @@ export const VerificationFlow: React.FC<VerificationFlowProps> = ({
                     <button
                       type="button"
                       onClick={() => handleCapacitorCameraCapture('front')}
-                      className="flex-1 py-2.5 px-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer transition-colors shadow-2xs"
+                      className="flex-1 min-h-[42px] py-2 px-3 bg-[#1E3A8A] hover:bg-blue-900 text-white rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer transition-colors whitespace-nowrap"
                     >
                       <Camera className="w-4 h-4" />
                       <span>Open Camera</span>
@@ -1633,7 +1708,7 @@ export const VerificationFlow: React.FC<VerificationFlowProps> = ({
                     <button
                       type="button"
                       onClick={() => handleCapacitorGalleryPick('front')}
-                      className="py-2.5 px-3 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl border border-slate-200 flex items-center gap-1.5 shrink-0 cursor-pointer"
+                      className="min-h-[42px] py-2 px-3 bg-white hover:bg-slate-100 text-slate-700 font-bold text-xs rounded-xl border border-slate-300 flex items-center gap-1.5 shrink-0 cursor-pointer whitespace-nowrap"
                     >
                       <ImageIcon className="w-4 h-4" />
                       <span>Gallery</span>
@@ -1643,15 +1718,15 @@ export const VerificationFlow: React.FC<VerificationFlowProps> = ({
               </div>
 
               {/* 2. Aadhaar Back Photo */}
-              <div className="p-3 bg-white border border-slate-200 rounded-2xl shadow-2xs space-y-2">
+              <div className="p-3 bg-slate-50 border border-slate-200 rounded-2xl space-y-2">
                 <div className="flex items-center justify-between">
                   <label className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
-                    <FileText className="w-3.5 h-3.5 text-blue-600" />
-                    <span>2. Aadhaar Back Photo (Complete Address &amp; QR) *</span>
+                    <FileText className="w-3.5 h-3.5 text-[#1E3A8A]" />
+                    <span>2. Aadhaar Back Photo (Address) *</span>
                   </label>
                   {aadhaarBackUrl && (
-                    <span className="text-[10px] text-emerald-700 font-bold flex items-center gap-0.5">
-                      <Check className="w-3 h-3 text-emerald-600 stroke-[3]" /> Captured
+                    <span className="text-[11px] text-emerald-700 font-bold flex items-center gap-1">
+                      <Check className="w-3.5 h-3.5 text-emerald-600 stroke-[3]" /> Captured
                     </span>
                   )}
                 </div>
@@ -1666,24 +1741,22 @@ export const VerificationFlow: React.FC<VerificationFlowProps> = ({
                 />
 
                 {aadhaarBackUrl ? (
-                  <div className="flex items-center justify-between p-2 bg-slate-50 rounded-xl border border-slate-200">
-                    <div className="flex items-center gap-2 min-w-0">
+                  <div className="flex items-center justify-between p-2 bg-white rounded-xl border border-slate-200">
+                    <div className="flex items-center gap-2.5 min-w-0">
                       <img
                         src={aadhaarBackUrl}
                         alt="Aadhaar Back"
-                        className="w-14 h-10 object-cover rounded-lg border border-slate-300 shrink-0"
+                        referrerPolicy="no-referrer"
+                        className="w-14 h-10 object-cover rounded-lg border border-slate-200 shrink-0"
                       />
-                      <div className="min-w-0">
-                        <p className="text-xs font-bold text-slate-800 truncate">
-                          Aadhaar Back Attached
-                        </p>
-                        <p className="text-[10px] text-slate-500">Captured from device</p>
-                      </div>
+                      <span className="text-xs font-semibold text-slate-800 truncate">
+                        Back Card Attached
+                      </span>
                     </div>
                     <button
                       type="button"
                       onClick={() => handleCapacitorCameraCapture('back')}
-                      className="p-1.5 px-2.5 bg-blue-50 text-blue-700 hover:bg-blue-100 rounded-lg text-xs font-bold flex items-center gap-1 cursor-pointer"
+                      className="min-h-[36px] px-2.5 bg-blue-50 text-[#1E3A8A] hover:bg-blue-100 rounded-lg text-xs font-bold flex items-center gap-1 cursor-pointer whitespace-nowrap"
                     >
                       <Camera className="w-3.5 h-3.5" />
                       <span>Retake</span>
@@ -1694,7 +1767,7 @@ export const VerificationFlow: React.FC<VerificationFlowProps> = ({
                     <button
                       type="button"
                       onClick={() => handleCapacitorCameraCapture('back')}
-                      className="flex-1 py-2.5 px-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer transition-colors shadow-2xs"
+                      className="flex-1 min-h-[42px] py-2 px-3 bg-[#1E3A8A] hover:bg-blue-900 text-white rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer transition-colors whitespace-nowrap"
                     >
                       <Camera className="w-4 h-4" />
                       <span>Open Camera</span>
@@ -1702,7 +1775,7 @@ export const VerificationFlow: React.FC<VerificationFlowProps> = ({
                     <button
                       type="button"
                       onClick={() => handleCapacitorGalleryPick('back')}
-                      className="py-2.5 px-3 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl border border-slate-200 flex items-center gap-1.5 shrink-0 cursor-pointer"
+                      className="min-h-[42px] py-2 px-3 bg-white hover:bg-slate-100 text-slate-700 font-bold text-xs rounded-xl border border-slate-300 flex items-center gap-1.5 shrink-0 cursor-pointer whitespace-nowrap"
                     >
                       <ImageIcon className="w-4 h-4" />
                       <span>Gallery</span>
@@ -1712,11 +1785,10 @@ export const VerificationFlow: React.FC<VerificationFlowProps> = ({
               </div>
             </div>
 
-            {/* Privacy Policy Consent */}
             <div
-              className={`p-3 rounded-2xl border transition-colors ${
+              className={`p-3 rounded-xl border transition-colors ${
                 privacyConsentError && !privacyConsent
-                  ? 'bg-rose-50 border-rose-300 ring-2 ring-rose-200'
+                  ? 'bg-rose-50 border-rose-300'
                   : 'bg-slate-50 border-slate-200'
               }`}
             >
@@ -1728,10 +1800,10 @@ export const VerificationFlow: React.FC<VerificationFlowProps> = ({
                     setPrivacyConsent(e.target.checked);
                     if (e.target.checked) setPrivacyConsentError(false);
                   }}
-                  className="mt-0.5 w-4 h-4 text-blue-600 rounded border-slate-300 focus:ring-blue-500 cursor-pointer shrink-0"
+                  className="mt-0.5 w-4 h-4 text-[#1E3A8A] rounded border-slate-300 cursor-pointer shrink-0"
                 />
                 <span className="text-xs text-slate-800 font-medium leading-snug">
-                  I authorize <strong>GharKaExpert</strong> to verify my identity documents in accordance with the <strong>Privacy Policy</strong>.
+                  I authorize <strong>GharKaExpert</strong> to verify my identity documents in accordance with the Privacy Policy.
                 </span>
               </label>
               {privacyConsentError && !privacyConsent && (
@@ -1745,7 +1817,7 @@ export const VerificationFlow: React.FC<VerificationFlowProps> = ({
             <button
               type="button"
               onClick={handleWorkerKycContinue}
-              className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl shadow-md transition-all flex items-center justify-center gap-2 text-sm cursor-pointer mt-1"
+              className="w-full min-h-[48px] py-3.5 bg-[#1E3A8A] hover:bg-blue-900 text-white font-bold rounded-xl shadow-sm transition-colors flex items-center justify-center gap-2 text-sm cursor-pointer whitespace-nowrap"
             >
               <span>Proceed to Profile Selfie</span>
               <ArrowRight className="w-4 h-4" />
@@ -1754,22 +1826,23 @@ export const VerificationFlow: React.FC<VerificationFlowProps> = ({
         )}
 
         {/* ========================================================================= */}
-        {/* 3E. WORKER FLOW: NATIVE SELFIE / PROFILE PHOTO CAPTURE                    */}
+        {/* 3E. WORKER LIVE SELFIE CAPTURE (WHITE CARD ON DEEP BLUE)                  */}
         {/* ========================================================================= */}
         {step === 'worker_camera' && (
           <motion.div
             key="worker_camera"
-            initial={{ opacity: 0, x: 20 }}
-            animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: -20 }}
-            className="space-y-3.5 my-auto flex flex-col items-center"
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -12 }}
+            transition={{ duration: 0.18 }}
+            className="w-full bg-white text-slate-900 rounded-3xl p-5 sm:p-6 shadow-xl space-y-4 flex flex-col items-center"
           >
             <div className="text-center">
               <h3 className="text-lg font-bold text-slate-900 flex items-center justify-center gap-2">
-                <Camera className="w-5 h-5 text-blue-600" />
+                <Camera className="w-5 h-5 text-[#1E3A8A]" />
                 Live Profile Selfie
               </h3>
-              <p className="text-xs text-slate-500 mt-0.5 font-normal">
+              <p className="text-xs text-slate-500 mt-0.5">
                 Take a clear front-facing photo to complete your Karigar profile
               </p>
             </div>
@@ -1783,11 +1856,12 @@ export const VerificationFlow: React.FC<VerificationFlowProps> = ({
               className="hidden"
             />
 
-            <div className="relative w-48 h-48 rounded-full overflow-hidden border-4 border-blue-600 bg-slate-100 shadow-md flex items-center justify-center my-2">
+            <div className="relative w-44 h-44 rounded-full overflow-hidden border-4 border-[#1E3A8A] bg-slate-100 shadow-sm flex items-center justify-center">
               {photoUrl ? (
                 <img
                   src={photoUrl}
                   alt="Captured Profile Selfie"
+                  referrerPolicy="no-referrer"
                   className="w-full h-full object-cover"
                 />
               ) : (
@@ -1802,25 +1876,25 @@ export const VerificationFlow: React.FC<VerificationFlowProps> = ({
 
               {!photoUrl && !isCameraActive && (
                 <div className="p-4 text-center">
-                  <Camera className="w-8 h-8 text-blue-600 mx-auto mb-1" />
+                  <Camera className="w-8 h-8 text-[#1E3A8A] mx-auto mb-1" />
                   <p className="text-xs text-slate-600 font-semibold">Ready to Capture</p>
                 </div>
               )}
             </div>
 
             {cameraError && (
-              <div className="p-2.5 bg-amber-50 border border-amber-200 rounded-xl text-center text-xs text-amber-950 max-w-xs space-y-1">
+              <div className="p-2.5 bg-amber-50 border border-amber-200 rounded-xl text-center text-xs text-amber-950 max-w-xs">
                 <p className="text-[11px] text-amber-900 leading-snug font-medium">{cameraError}</p>
               </div>
             )}
 
-            <div className="w-full max-w-xs space-y-2 pt-1">
+            <div className="w-full space-y-2.5">
               {!photoUrl ? (
                 <div className="flex flex-col gap-2">
                   <button
                     type="button"
                     onClick={handleNativeSelfieCapture}
-                    className="w-full py-3.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl shadow-md flex items-center justify-center gap-2 text-sm cursor-pointer"
+                    className="w-full min-h-[48px] py-3.5 bg-[#1E3A8A] hover:bg-blue-900 text-white font-bold rounded-xl shadow-sm flex items-center justify-center gap-2 text-sm cursor-pointer whitespace-nowrap"
                   >
                     <Camera className="w-4 h-4" />
                     <span>Open Front Camera</span>
@@ -1830,7 +1904,7 @@ export const VerificationFlow: React.FC<VerificationFlowProps> = ({
                     <button
                       type="button"
                       onClick={snapPhoto}
-                      className="w-full py-2.5 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-xl text-xs flex items-center justify-center gap-1.5 cursor-pointer shadow-xs"
+                      className="w-full min-h-[44px] py-2.5 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-xl text-xs flex items-center justify-center gap-1.5 cursor-pointer whitespace-nowrap"
                     >
                       <Camera className="w-3.5 h-3.5 text-amber-400" />
                       <span>{t('clickPhotoBtn', currentLanguage)}</span>
@@ -1848,9 +1922,9 @@ export const VerificationFlow: React.FC<VerificationFlowProps> = ({
                         selfieFileInputRef.current?.click();
                       }
                     }}
-                    className="w-full py-2 bg-white hover:bg-slate-100 text-slate-700 font-bold rounded-xl text-xs border border-slate-200 flex items-center justify-center gap-1.5 cursor-pointer"
+                    className="w-full min-h-[44px] py-2.5 bg-slate-50 hover:bg-slate-100 text-slate-700 font-bold rounded-xl text-xs border border-slate-300 flex items-center justify-center gap-1.5 cursor-pointer whitespace-nowrap"
                   >
-                    <UploadCloud className="w-3.5 h-3.5 text-slate-500" />
+                    <UploadCloud className="w-4 h-4 text-slate-500" />
                     <span>Upload from Photo Gallery</span>
                   </button>
                 </div>
@@ -1859,7 +1933,7 @@ export const VerificationFlow: React.FC<VerificationFlowProps> = ({
                   <button
                     type="button"
                     onClick={handleCompleteWorkerRegistration}
-                    className="w-full py-3.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl shadow-md flex items-center justify-center gap-2 text-sm cursor-pointer"
+                    className="w-full min-h-[48px] py-3.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl shadow-sm flex items-center justify-center gap-2 text-sm cursor-pointer whitespace-nowrap"
                   >
                     <CheckCircle className="w-5 h-5" />
                     <span>Complete KYC &amp; Activate Profile</span>
@@ -1867,7 +1941,7 @@ export const VerificationFlow: React.FC<VerificationFlowProps> = ({
                   <button
                     type="button"
                     onClick={retakePhoto}
-                    className="w-full py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-xs border border-slate-200 flex items-center justify-center gap-1.5 cursor-pointer"
+                    className="w-full min-h-[44px] py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-xs border border-slate-200 flex items-center justify-center gap-1.5 cursor-pointer whitespace-nowrap"
                   >
                     <RefreshCw className="w-3.5 h-3.5" />
                     <span>{t('retakePhotoBtn', currentLanguage)}</span>
@@ -1879,73 +1953,60 @@ export const VerificationFlow: React.FC<VerificationFlowProps> = ({
         )}
 
         {/* ========================================================================= */}
-        {/* 3F. WORKER FLOW: KYC SUCCESS & LAUNCH                                     */}
+        {/* 3F. WORKER KYC SUCCESS (WHITE CARD ON DEEP BLUE)                          */}
         {/* ========================================================================= */}
         {step === 'worker_success' && (
           <motion.div
             key="worker_success"
-            initial={{ scale: 0.85, opacity: 0 }}
+            initial={{ scale: 0.94, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
-            className="text-center my-auto space-y-4 py-2"
+            transition={{ duration: 0.18 }}
+            className="w-full bg-white text-slate-900 rounded-3xl p-5 sm:p-6 shadow-xl text-center space-y-4"
           >
             <div className="relative w-20 h-20 mx-auto">
-              <div className="absolute inset-0 bg-emerald-500/20 rounded-full blur-xl animate-pulse" />
-              <div className="relative w-full h-full bg-white rounded-full border-4 border-emerald-500 p-1 flex items-center justify-center shadow-md">
+              <div className="relative w-full h-full bg-white rounded-full border-4 border-emerald-500 p-1 flex items-center justify-center shadow-sm">
                 <img
                   src={photoUrl}
                   alt="Verified Profile"
+                  referrerPolicy="no-referrer"
                   className="w-full h-full rounded-full object-cover"
                 />
                 <BadgeCheck className="w-7 h-7 text-emerald-600 bg-white rounded-full absolute -bottom-1 -right-1 stroke-[2.5]" />
               </div>
             </div>
 
-            <div>
-              <span className="inline-flex items-center gap-1 px-3 py-1 bg-emerald-100 text-emerald-900 rounded-full text-xs font-black mb-1">
-                ✓ Verified Karigar Profile Active
-              </span>
+            <div className="space-y-1">
+              <p className="text-xs font-bold text-emerald-700">
+                Verified Karigar Profile Active
+              </p>
               <h3 className="text-xl font-extrabold text-slate-900">{fullName}</h3>
               <p className="text-xs text-slate-500 capitalize">
-                {primarySkill} • {experienceYears} Years Experience • Pincode {pincode}
+                {primarySkill} · {experienceYears} Years Experience · Pincode {pincode}
               </p>
             </div>
 
-            <div className="p-3.5 bg-white border border-slate-200 rounded-2xl text-xs text-slate-700 max-w-sm mx-auto shadow-2xs text-left space-y-2">
-              <div className="flex items-center justify-between border-b border-slate-100 pb-1.5 font-bold text-slate-900">
-                <span className="flex items-center gap-1 text-emerald-700">
-                  <ShieldCheck className="w-4 h-4" />
-                  KYC Verification Summary
-                </span>
-                <span className="text-[10px] bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full font-black">
-                  VERIFIED
-                </span>
-              </div>
-              <div className="space-y-1 text-[11px] text-slate-600">
-                <p className="flex items-center gap-1.5">
-                  <Check className="w-3.5 h-3.5 text-emerald-600 stroke-[3]" />
-                  <span>
-                    Mobile Number: <strong>+91 {phone}</strong>
-                  </span>
-                </p>
-                <p className="flex items-center gap-1.5">
-                  <Check className="w-3.5 h-3.5 text-emerald-600 stroke-[3]" />
-                  <span>
-                    Aadhaar Front &amp; Back: <strong>Captured</strong>
-                  </span>
-                </p>
-                <p className="flex items-center gap-1.5">
-                  <Check className="w-3.5 h-3.5 text-emerald-600 stroke-[3]" />
-                  <span>
-                    Profile Selfie: <strong>Verified</strong>
-                  </span>
-                </p>
-              </div>
+            <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-2xl text-xs text-slate-700 text-left space-y-1.5">
+              <p className="font-bold text-slate-900 pb-1 border-b border-slate-200">
+                KYC Verification Summary
+              </p>
+              <p className="flex items-center justify-between text-[11px]">
+                <span className="text-slate-500">Mobile Number</span>
+                <strong className="font-mono tabular-nums text-slate-900">+91 {phone}</strong>
+              </p>
+              <p className="flex items-center justify-between text-[11px]">
+                <span className="text-slate-500">Aadhaar Front &amp; Back</span>
+                <strong className="text-emerald-700">Captured</strong>
+              </p>
+              <p className="flex items-center justify-between text-[11px]">
+                <span className="text-slate-500">Profile Selfie</span>
+                <strong className="text-emerald-700">Verified</strong>
+              </p>
             </div>
 
             <button
               type="button"
               onClick={handleFinalEnterWorkerApp}
-              className="w-full max-w-sm mx-auto py-3.5 bg-blue-600 hover:bg-blue-700 text-white font-extrabold rounded-xl shadow-md flex items-center justify-center gap-2 text-sm cursor-pointer transition-all active:scale-[0.98]"
+              className="w-full min-h-[48px] py-3.5 bg-[#1E3A8A] hover:bg-blue-900 text-white font-extrabold rounded-xl shadow-sm flex items-center justify-center gap-2 text-sm cursor-pointer transition-colors whitespace-nowrap"
             >
               <span>Enter Karigar Dashboard</span>
               <ArrowRight className="w-4 h-4" />
@@ -1953,6 +2014,11 @@ export const VerificationFlow: React.FC<VerificationFlowProps> = ({
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Quiet Footer Note on Deep Blue Canvas */}
+      <div className="mt-auto pt-6 pb-2 text-center text-[11px] text-blue-200/90">
+        GharKaExpert · Secure SMS Verification powered by Firebase
+      </div>
     </div>
   );
 };

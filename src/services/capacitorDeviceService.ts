@@ -6,6 +6,7 @@ export interface CameraCaptureResult {
   success: boolean;
   dataUrl?: string;
   cancelled?: boolean;
+  permissionDenied?: boolean;
   error?: string;
 }
 
@@ -15,10 +16,32 @@ export interface CameraCaptureResult {
  */
 export const deviceCameraService = {
   /**
-   * Ensures runtime camera & photo library permissions are granted on native Android/iOS
+   * Ensures runtime camera & photo library permissions are granted on native Android/iOS and web browsers
    */
   async ensurePermissions(source: CameraSource): Promise<void> {
-    if (!Capacitor.isNativePlatform()) return;
+    if (!Capacitor.isNativePlatform()) {
+      if (
+        source === CameraSource.Camera &&
+        typeof navigator !== 'undefined' &&
+        navigator.permissions?.query
+      ) {
+        try {
+          const permStatus = await navigator.permissions.query({
+            name: 'camera' as PermissionName,
+          });
+          if (permStatus.state === 'denied') {
+            throw new Error(
+              'Camera permission is blocked. Please enable Camera access in your browser or phone Settings.'
+            );
+          }
+        } catch (err) {
+          if (err instanceof Error && err.message.includes('Camera permission is blocked')) {
+            throw err;
+          }
+        }
+      }
+      return;
+    }
 
     const current = await Camera.checkPermissions();
     const needsCamera =
@@ -31,14 +54,23 @@ export const deviceCameraService = {
 
     if (needsCamera || needsPhotos) {
       const requested = await Camera.requestPermissions({
-        permissions: needsCamera && needsPhotos ? ['camera', 'photos'] : needsCamera ? ['camera'] : ['photos'],
+        permissions:
+          needsCamera && needsPhotos
+            ? ['camera', 'photos']
+            : needsCamera
+            ? ['camera']
+            : ['photos'],
       });
 
       if (source === CameraSource.Camera && requested.camera === 'denied') {
-        throw new Error('Camera permission was denied. Please enable Camera access in your phone Settings.');
+        throw new Error(
+          'Camera permission was denied. Please enable Camera access in your phone Settings.'
+        );
       }
       if (source === CameraSource.Photos && requested.photos === 'denied') {
-        throw new Error('Photo library permission was denied. Please enable Photos access in your phone Settings.');
+        throw new Error(
+          'Photo library permission was denied. Please enable Photos access in your phone Settings.'
+        );
       }
     }
   },
@@ -83,6 +115,18 @@ export const deviceCameraService = {
         lower.includes('user cancelled')
       ) {
         return { success: false, cancelled: true };
+      }
+      if (
+        lower.includes('permission') ||
+        lower.includes('denied') ||
+        lower.includes('notallowederror')
+      ) {
+        return {
+          success: false,
+          permissionDenied: true,
+          error:
+            'Camera permission denied. Please grant Camera permission in your device Settings to capture photos.',
+        };
       }
       return { success: false, error: msg || 'Unable to access smartphone camera.' };
     }

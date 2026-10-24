@@ -18,54 +18,53 @@ export const RoleSelector: React.FC<RoleSelectorProps> = ({
   onProceed,
 }) => {
   return (
-    <div className="min-h-[580px] w-full bg-slate-50 text-slate-800 p-5 flex flex-col justify-between rounded-xl border border-slate-200 shadow-sm">
-      {/* Header */}
-      <div>
-        <div className="text-center space-y-1 mb-6">
-          <span className="inline-flex items-center gap-1 px-3 py-1 bg-blue-50 text-blue-700 rounded-full text-xs font-semibold border border-blue-100">
-            <ShieldCheck className="w-3.5 h-3.5" /> Dual-Mode Architecture
-          </span>
-          <h2 className="text-2xl font-bold text-slate-900">
+    <div className="min-h-dvh flex-1 w-full bg-[#1E3A8A] text-white px-4 py-5 sm:px-6 sm:py-6 flex flex-col justify-between">
+      <div className="w-full space-y-5">
+        <div className="space-y-1 pt-1">
+          <p className="text-xs text-blue-200 font-semibold flex items-center gap-1.5">
+            <ShieldCheck className="w-4 h-4 text-amber-400" />
+            <span>Dual-Mode Account</span>
+          </p>
+          <h2 className="text-2xl font-extrabold text-white tracking-tight">
             {t('roleTitle', currentLanguage)}
           </h2>
-          <p className="text-xs text-slate-500 font-normal">
-            Select how you wish to use GharKaExpert today (You can switch anytime)
+          <p className="text-xs text-blue-100 font-normal">
+            Select how you wish to use GharKaExpert today (you can switch anytime)
           </p>
         </div>
 
-        {/* Role Cards */}
-        <div className="space-y-4">
+        <div className="w-full bg-white text-slate-900 rounded-3xl p-5 shadow-xl space-y-4">
           {/* CUSTOMER CARD */}
           <motion.div
             whileHover={{ scale: 1.01 }}
             whileTap={{ scale: 0.99 }}
             onClick={() => onSelectRole('customer')}
-            className={`p-4 rounded-xl border-2 cursor-pointer transition-all ${
+            className={`p-4 rounded-2xl border-2 cursor-pointer transition-all ${
               currentRole === 'customer'
-                ? 'bg-blue-50 border-blue-600 ring-2 ring-blue-500/20 shadow-sm'
-                : 'bg-white border-slate-200 hover:bg-slate-100'
+                ? 'bg-blue-50/80 border-[#1E3A8A]'
+                : 'bg-slate-50/70 border-slate-200 hover:bg-slate-100'
             }`}
           >
             <div className="flex items-start gap-3">
-              <div className="p-3 bg-blue-600 text-white rounded-xl shadow-sm shrink-0">
-                <Home className="w-7 h-7 stroke-[2.2]" />
+              <div className="p-3 bg-[#1E3A8A] text-white rounded-xl shadow-2xs shrink-0">
+                <Home className="w-6 h-6 stroke-[2.2]" />
               </div>
               <div className="space-y-1 flex-1">
                 <div className="flex items-center justify-between">
-                  <h3 className="text-lg font-bold text-slate-900">
+                  <h3 className="text-base font-bold text-slate-900">
                     {t('roleCustomer', currentLanguage)}
                   </h3>
                   {currentRole === 'customer' && (
-                    <span className="p-1 bg-blue-600 text-white rounded-full">
-                      <CheckCircle className="w-4 h-4 fill-blue-600 text-white" />
+                    <span className="p-0.5 bg-[#1E3A8A] text-white rounded-full">
+                      <CheckCircle className="w-4 h-4 fill-[#1E3A8A] text-white" />
                     </span>
                   )}
                 </div>
                 <p className="text-xs text-slate-600 leading-relaxed font-normal">
                   {t('roleCustomerDesc', currentLanguage)}
                 </p>
-                <div className="flex items-center gap-2 pt-1 text-[11px] text-blue-700 font-semibold">
-                  <Sparkles className="w-3.5 h-3.5 text-blue-600" /> Direct Call & WhatsApp • Zero Brokerage
+                <div className="pt-1 text-[11px] text-[#1E3A8A] font-semibold">
+                  Direct Call &amp; WhatsApp · Zero Brokerage
                 </div>
               </div>
             </div>
@@ -76,48 +75,49 @@ export const RoleSelector: React.FC<RoleSelectorProps> = ({
             whileHover={{ scale: 1.01 }}
             whileTap={{ scale: 0.99 }}
             onClick={() => onSelectRole('worker')}
-            className={`p-4 rounded-xl border-2 cursor-pointer transition-all ${
+            className={`p-4 rounded-2xl border-2 cursor-pointer transition-all ${
               currentRole === 'worker'
-                ? 'bg-blue-50 border-blue-600 ring-2 ring-blue-500/20 shadow-sm'
-                : 'bg-white border-slate-200 hover:bg-slate-100'
+                ? 'bg-amber-50/80 border-amber-500'
+                : 'bg-slate-50/70 border-slate-200 hover:bg-slate-100'
             }`}
           >
             <div className="flex items-start gap-3">
-              <div className="p-3 bg-slate-900 text-blue-400 rounded-xl shadow-sm shrink-0">
-                <HardHat className="w-7 h-7 stroke-[2.2]" />
+              <div className="p-3 bg-amber-500 text-slate-950 rounded-xl shadow-2xs shrink-0">
+                <HardHat className="w-6 h-6 stroke-[2.2]" />
               </div>
               <div className="space-y-1 flex-1">
                 <div className="flex items-center justify-between">
-                  <h3 className="text-lg font-bold text-slate-900">
+                  <h3 className="text-base font-bold text-slate-900">
                     {t('roleWorker', currentLanguage)}
                   </h3>
                   {currentRole === 'worker' && (
-                    <span className="p-1 bg-blue-600 text-white rounded-full">
-                      <CheckCircle className="w-4 h-4 fill-blue-600 text-white" />
+                    <span className="p-0.5 bg-amber-500 text-slate-950 rounded-full">
+                      <CheckCircle className="w-4 h-4 fill-amber-500 text-white" />
                     </span>
                   )}
                 </div>
                 <p className="text-xs text-slate-600 leading-relaxed font-normal">
                   {t('roleWorkerDesc', currentLanguage)}
                 </p>
-                <div className="flex items-center gap-2 pt-1 text-[11px] text-blue-700 font-semibold">
-                  <Sparkles className="w-3.5 h-3.5 text-blue-600" /> Upload Portfolio • Sub-Contracting Pass Work
+                <div className="pt-1 text-[11px] text-amber-800 font-semibold">
+                  Upload Portfolio · Sub-Contracting Pass Work
                 </div>
               </div>
             </div>
           </motion.div>
+
+          <button
+            onClick={onProceed}
+            className="w-full min-h-[48px] py-3.5 px-5 bg-[#1E3A8A] hover:bg-blue-900 text-white font-bold rounded-xl shadow-sm transition-colors flex items-center justify-center gap-2 text-sm cursor-pointer"
+          >
+            <span>Enter GharKaExpert App</span>
+            <ArrowRight className="w-4 h-4" />
+          </button>
         </div>
       </div>
 
-      {/* Proceed Button */}
-      <div className="pt-4 border-t border-slate-200 mt-4">
-        <button
-          onClick={onProceed}
-          className="w-full py-3.5 px-5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl shadow-md transition-all flex items-center justify-center gap-2 text-sm active:scale-[0.98]"
-        >
-          <span>Enter GharKaExpert App 🚀</span>
-          <ArrowRight className="w-4 h-4" />
-        </button>
+      <div className="pt-4 pb-1 text-center text-[11px] text-blue-200/90">
+        GharKaExpert · Direct Local Karigar Network
       </div>
     </div>
   );

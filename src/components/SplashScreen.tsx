@@ -11,16 +11,14 @@ interface SplashScreenProps {
 
 export const SplashScreen: React.FC<SplashScreenProps> = ({ currentLanguage, onProceed }) => {
   return (
-    <div className="relative min-h-[580px] h-full w-full bg-gradient-to-b from-blue-700 via-blue-800 to-slate-900 text-white flex flex-col items-center justify-between p-6 overflow-hidden rounded-xl shadow-xl">
-      {/* Background Subtle Construction Grid Pattern */}
-      <div className="absolute inset-0 opacity-10 bg-[radial-gradient(#fff_1px,transparent_1px)] [background-size:16px_16px] pointer-events-none" />
-
-      {/* Top Bar Status / Brand Pill */}
-      <div className="w-full flex justify-between items-center pt-2 z-10">
-        <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-white/10 backdrop-blur-md border border-white/20 rounded-full text-xs font-medium text-blue-100">
-          <ShieldCheck className="w-3.5 h-3.5 text-blue-300" /> 100% Verified Karigars
+    <div className="relative min-h-dvh flex-1 w-full bg-[#1E3A8A] text-white flex flex-col items-center justify-between p-6 overflow-hidden">
+      {/* Top Bar Status */}
+      <div className="w-full flex justify-between items-center pt-2 z-10 text-xs text-blue-100 font-medium">
+        <span className="inline-flex items-center gap-1.5">
+          <ShieldCheck className="w-4 h-4 text-amber-400" />
+          <span>100% Verified Karigars</span>
         </span>
-        <span className="text-xs text-blue-100/80 font-mono">v2.4 • India 🇮🇳</span>
+        <span className="text-blue-200">India · 0% Commission</span>
       </div>
 
       {/* Main Center Animated Logo Area */}
