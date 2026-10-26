@@ -293,10 +293,21 @@ export default function App() {
   const [ratingModalData, setRatingModalData] = useState<{ booking: DirectBooking; worker: WorkerProfile } | null>(null);
   const [adminAlertMessage, setAdminAlertMessage] = useState<string | null>(null);
 
-  // Initialize AdMob on component mount
+  // Initialize Google AdMob SDK & preload interstitial ads
   useEffect(() => {
-    admobService.initialize();
+    void admobService.initialize();
   }, []);
+
+  // Ensure native banner only shows on Home screen and interstitial ('home_ads') stays preloaded
+  useEffect(() => {
+    if (onboardingStep === 'home') {
+      if (!vipSubscription.isVipUser) {
+        void admobService.loadInterstitialAd(ADMOB_CONFIG.interstitialAdUnitId);
+      }
+    } else {
+      void admobService.removeHomeBanner();
+    }
+  }, [onboardingStep, vipSubscription.isVipUser]);
 
   // Trigger Google AdMob Interstitial Ad or Proceed Directly based on VIP status
   const handleInitiateContact = (worker: WorkerProfile, mode: 'call' | 'whatsapp') => {

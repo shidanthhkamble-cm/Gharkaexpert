@@ -14,7 +14,7 @@ import {
   CheckCircle2,
   ShieldCheck
 } from 'lucide-react';
-import { ADMOB_CONFIG } from '../services/admobService';
+import { ADMOB_CONFIG, admobService } from '../services/admobService';
 
 interface BannerAdProps {
   onDismiss?: () => void;
@@ -54,21 +54,61 @@ export const BannerAd: React.FC<BannerAdProps> = ({
 }) => {
   const [visible, setVisible] = useState(true);
   const [currentAdIndex, setCurrentAdIndex] = useState(0);
+  const [nativeBannerHeight, setNativeBannerHeight] = useState(50);
+  const isNative = admobService.isNativePlatform();
 
   useEffect(() => {
-    // Rotate ads every 10 seconds
+    if (isNative) {
+      const unsubscribe = admobService.onBannerSizeChange((heightDp) => {
+        if (heightDp > 0) {
+          setNativeBannerHeight(heightDp);
+        }
+      });
+
+      // Load & display real AdMob 'home banner' (ca-app-pub-7439683563136300/3250425347)
+      // positioned 54dp above bottom navigation bar
+      void admobService.showHomeBanner(54, adUnitId);
+
+      return () => {
+        unsubscribe();
+        void admobService.removeHomeBanner();
+      };
+    }
+
+    // Web preview sponsor rotation
     const interval = setInterval(() => {
       setCurrentAdIndex((prev) => (prev + 1) % BANNER_SPONSORS.length);
     }, 10000);
     return () => clearInterval(interval);
-  }, []);
+  }, [isNative, adUnitId]);
 
   if (!visible) return null;
+
+  // On native Android/iOS, the native AdMob view overlays at BOTTOM_CENTER;
+  // reserve exact layout height so page content is never obscured behind the banner.
+  if (isNative) {
+    const heightClass =
+      nativeBannerHeight > 60
+        ? 'h-20'
+        : nativeBannerHeight > 50
+        ? 'h-[60px]'
+        : 'h-[50px]';
+    return (
+      <div
+        aria-label="Google AdMob Home Banner Slot"
+        data-ad-unit-id={adUnitId}
+        className={`w-full shrink-0 bg-slate-900 ${heightClass}`}
+      />
+    );
+  }
 
   const currentAd = BANNER_SPONSORS[currentAdIndex];
 
   return (
-    <div className="w-full bg-slate-900 border-t-2 border-amber-500 text-white shadow-2xl relative z-30 transition-all">
+    <div
+      data-ad-unit-id={adUnitId}
+      className="w-full bg-slate-900 border-t-2 border-amber-500 text-white shadow-2xl relative z-30 transition-all"
+    >
       {/* Top micro AdMob meta identifier */}
       <div className="bg-slate-950 px-3 py-0.5 flex items-center justify-between text-[9px] text-slate-400 border-b border-slate-800/80">
         <div className="flex items-center gap-1.5">
@@ -116,6 +156,7 @@ export const BannerAd: React.FC<BannerAdProps> = ({
             <button
               onClick={() => {
                 setVisible(false);
+                void admobService.removeHomeBanner();
                 onDismiss();
               }}
               className="p-1 text-slate-400 hover:text-white rounded-md hover:bg-slate-800 transition-colors"

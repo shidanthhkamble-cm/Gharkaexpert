@@ -13,6 +13,10 @@
     "FirebaseAuthentication": {
       "skipNativeAuth": false,
       "providers": ["phone"]
+    },
+    "AdMob": {
+      "appIdAndroid": "ca-app-pub-7439683563136300~5277822881",
+      "initializeForTesting": false
     }
   }
 }
