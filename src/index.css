@@ -1,5 +1,9 @@
 @import "tailwindcss";
 
+@theme {
+  --font-sans: "Plus Jakarta Sans", ui-sans-serif, system-ui, -apple-system, sans-serif;
+}
+
 html,
 body,
 #root {
@@ -8,6 +12,7 @@ body,
   margin: 0;
   padding: 0;
   background-color: #1E3A8A;
+  font-family: var(--font-sans);
 }
 
 /* Custom Mobile Scrollbar styling */
